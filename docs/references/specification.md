@@ -6,6 +6,7 @@ This document defines a **behavior-centric specification system** for describing
 
 ```
 Project → Flow → Page → Behavior
+        → Automation
 ```
 
 **Technical Specifications** describe *how the system is built* from the developer's perspective. They are a flat catalog of implementation units:
@@ -14,7 +15,7 @@ Project → Flow → Page → Behavior
 Function | Class | Component | Hook | Workflow
 ```
 
-**Behavior is the bridge between both.** It is the leaf of the Functional hierarchy and the unit that Technical specs reference. All specifications are written in concise, human-readable Markdown.
+**Behavior and Automation are the leaves of the Functional hierarchy** and the primary units that Technical specs reference. Behaviors are user-triggered; Automations are system-triggered. All specifications are written in concise, human-readable Markdown.
 
 ---
 
@@ -43,11 +44,13 @@ A project specification consists of:
 2. A short description of the application
 3. A **Pages** section listing all pages with their behaviors
 4. A **Flows** section listing all flows with their behaviors
+5. An **Automations** section listing all automations with their triggers
 
 ### Conventions
 
 - Each page entry includes the path and a list of behaviors
 - Each flow entry includes a description and an ordered list of behaviors
+- Each automation entry includes a name, trigger type, and description
 - Behaviors are listed by name, linking pages and flows to the behavior specifications
 
 ### Example
@@ -113,6 +116,18 @@ Covers the full lifecycle of a project from creation to completion.
 3. Add Team Member
 4. Complete Project
 5. Archive Project
+
+## Automations
+
+### Send Weekly Digest
+**Trigger:** Schedule — every Monday at 8am UTC
+
+Sends a summary email to all active users with their activity from the past week.
+
+### Archive Stale Projects
+**Trigger:** Schedule — every day at midnight
+
+Automatically archives projects with no activity in the past 90 days.
 ```
 
 ---
@@ -409,13 +424,98 @@ id, project_id, user_id
 
 ---
 
+## 5. Automation Specification Format
+
+Automation specifications describe **system-triggered processes** governed by declarative rules. Automations belong directly to the Project (not to a Page) and are always implemented as workflows.
+
+### Structure
+
+An automation specification consists of:
+1. A top-level heading naming the **automation**
+2. A one-paragraph description
+3. The automation directory
+4. A **Trigger** section — what initiates the automation
+5. A **Rules** section — named rules with When/Then conditions
+6. A **Scenarios** section — concrete scenarios demonstrating the automation
+
+### Trigger Section
+
+**Scheduled:**
+```markdown
+## Trigger
+
+- Schedule: `0 8 * * 1` — every Monday at 8am UTC
+```
+
+**Internal event:**
+```markdown
+## Trigger
+
+- Event: `user.signed_up` — fires when a new user completes registration
+```
+
+### Example
+
+```markdown
+# Send Weekly Digest
+
+Sends a weekly summary email to all active users with their activity from the past week.
+Directory: `shared/automations/send-weekly-digest/`
+
+## Trigger
+
+- Schedule: `0 8 * * 1` — every Monday at 8am UTC
+
+## Rules
+
+### Active Users Only
+- When:
+  - User status is "active"
+- Then:
+  - Include user in the digest batch
+
+### Skip Empty Digest
+- When:
+  - User has no activity in the past 7 days
+- Then:
+  - Skip email for that user
+
+## Scenarios
+
+### Digest sent to active users with activity
+
+#### PreDB
+users:
+id, email, status
+1, alice@example.com, active
+2, bob@example.com, active
+3, carol@example.com, inactive
+
+activity_events:
+id, user_id, created_at
+1, 1, 2026-05-18T10:00:00Z
+
+#### Steps
+* Act: Scheduler triggers "Send Weekly Digest" on 2026-05-25 at 8am UTC
+* Check: Email sent to alice@example.com
+* Check: No email sent to bob@example.com (no activity this week)
+* Check: No email sent to carol@example.com (inactive)
+
+#### PostDB
+digest_emails:
+id, user_id, sent_at
+1, 1, 2026-05-25T08:00:00Z
+```
+
+---
+
 # Part 2: Technical Specifications
 
 Technical specifications describe implementation units that realize behaviors. They are a flat catalog - each spec type stands alone and references behaviors it participates in.
 
 ---
 
-## 5. Function Specification Format
+## 6. Function Specification Format
 
 Function specifications describe the **behavioral contract** of a single function. They focus on _intent_, not implementation.
 
@@ -506,7 +606,7 @@ id, user_id, name
 
 ---
 
-## 6. Class Specification Format
+## 7. Class Specification Format
 
 Class specifications describe **object-oriented units** including their state, methods, and relationships.
 
@@ -583,7 +683,7 @@ id, name, status
 
 ---
 
-## 7. Component Specification Format
+## 8. Component Specification Format
 
 Component specifications describe **UI components** in terms of their inputs, state, and structure.
 
@@ -640,7 +740,7 @@ Renders the form used to create a new project.
 
 ---
 
-## 8. Hook Specification Format
+## 9. Hook Specification Format
 
 Hook specifications describe the **entry point of a behavior** - the bridge between UI components and server actions.
 
@@ -725,7 +825,7 @@ error: "Name is required"
 
 ---
 
-## 9. Route Specification Format
+## 10. Route Specification Format
 
 Route specifications describe **HTTP endpoints** for behaviors that need HTTP semantics, streaming, or external access. They are the HTTP counterpart to Server Actions.
 
@@ -851,7 +951,7 @@ prompt: ""
 
 ---
 
-## 10. Workflow Specification Format
+## 11. Workflow Specification Format
 
 Workflow specifications describe **durable, multi-step background processes** that survive failures and can resume from checkpoints. They are implementation-agnostic and can be realized using systems like Inngest, Trigger.dev, or useworkflow.
 
@@ -985,12 +1085,12 @@ id, status, total
 
 # Principles
 
-- Behavior is the bridge between Functional and Technical specs
+- Behavior and Automation are the leaves of the Functional hierarchy
 - Functional specs describe _what_, Technical specs describe _how_
-- Functional specs are hierarchical (Project → Flow → Page → Behavior)
+- Functional specs are hierarchical (Project → Flow → Page → Behavior; Project → Automation)
 - Technical specs are a flat catalog (Function, Class, Component, Hook, Route, Workflow)
 - Thin Client, Fat Server: the client triggers intent, the server realizes it
-- One backend entry point per behavior (Action or Route, never both)
+- A behavior may have at most one Action, one Route, and one Workflow — each serves a distinct purpose
 - State ownership is always explicit
 - Omitted sections are meaningful
 - Formats are minimal and consistent

@@ -28,6 +28,8 @@
 
 **Critical Rule**: Data flows top to bottom only. No layer may import from layers above it.
 
+**Behaviors** (user-triggered) and **Automations** (system-triggered) are the feature units that span these layers. A Behavior is triggered by a user action. An Automation is triggered by a schedule or internal event and has no Presentation layer.
+
 ---
 
 ## Layer Responsibilities
@@ -91,17 +93,19 @@ Component -> Hook -> Action -> Integration -> Database
 
 ---
 
-## Action vs Route
+## Behavior Entry Points
 
-Every behavior has exactly one backend entry point: an Action or a Route.
+A behavior may have at most one Action, one Route, and one Workflow. Each serves a distinct purpose and they can coexist within the same behavior.
 
-| Aspect | Action | Route |
-|--------|--------|-------|
-| Protocol | Server Action (direct import) | HTTP endpoint (fetch-based) |
-| Invocation | `await action(input)` | `fetch()` or `fetchEventSource()` |
-| Streaming | No | Optional (SSE supported) |
-| File | `[name].action.ts` | `route.ts` |
-| Location | Behavior folder | Behavior folder |
+| Aspect | Action | Route | Workflow |
+|--------|--------|-------|----------|
+| Protocol | Server Action (direct import) | HTTP endpoint (fetch-based) | Durable background job |
+| Invocation | `await action(input)` | `fetch()` or `fetchEventSource()` | `await workflow.start(input)` |
+| Streaming | No | Optional (SSE supported) | No |
+| Long-running | No | No | Yes |
+| Retries | Manual | Manual | Automatic |
+| File | `[name].action.ts` | `route.ts` | `[name].workflow.ts` |
+| Location | `behaviors/[name]/actions/` | `behaviors/[name]/routes/` | `behaviors/[name]/workflows/` |
 
 ### When to Use Each
 
@@ -115,6 +119,11 @@ Every behavior has exactly one backend entry point: an Action or a Route.
 - Webhooks (external integrations like Stripe)
 - Need HTTP semantics (headers, status codes)
 - External client access needed
+
+**Workflow**:
+- Long-running background processing
+- Automatic retries and checkpointing required
+- Multi-step orchestration with durable state
 
 ### Hook Consumption
 
@@ -182,13 +191,17 @@ Violations:
 
 ## File Locations
 
-| Layer | Location | File Pattern |
-|-------|----------|--------------|
+| Type | Location | File Pattern |
+|------|----------|--------------|
 | Components | `app/[page]/components/` | `PascalCase.tsx` |
 | Hooks | `app/[page]/behaviors/[name]/` | `use-[name].ts` |
 | States | `app/[page]/behaviors/[name]/` | `state.ts` |
-| Actions | `app/[page]/behaviors/[name]/` | `[name].action.ts` |
-| Routes | `app/[page]/behaviors/[name]/` | `route.ts` |
+| Actions | `app/[page]/behaviors/[name]/actions/` | `[name].action.ts` |
+| Routes | `app/[page]/behaviors/[name]/routes/` | `route.ts` |
+| Workflows (behavior) | `app/[page]/behaviors/[name]/workflows/` | `[name].workflow.ts` |
+| Workflow Steps | `app/[page]/behaviors/[name]/workflows/steps/` | `[step-name].ts` |
+| Automations | `shared/automations/[name]/workflows/` | `[name].workflow.ts` |
+| Automation Steps | `shared/automations/[name]/workflows/steps/` | `[step-name].ts` |
 | Integrations | `shared/integrations/` | `[name].ts` |
 | Models | `shared/models/` | `[name].ts` |
 
@@ -205,6 +218,11 @@ shared/                              <- Global: shared across all pages
   actions/
   hooks/
   states/
+  automations/                       <- System-triggered workflows
+    [name]/
+      workflows/
+        [name].workflow.ts
+        steps/
 
 app/[page]/
   shared/                            <- Page-level: shared between behaviors
@@ -240,3 +258,43 @@ app/[page]/
 - Models and Integrations (always global)
 - Code needed by 2+ pages
 - Core utilities used throughout the app
+- Automations (always global — not page-specific)
+
+---
+
+## Automations
+
+Automations are system-triggered processes that run independently of user interaction. They are parallel to Behaviors in the functional hierarchy — both are feature units, but with different triggers and no Presentation layer.
+
+| Aspect | Behavior | Automation |
+|--------|----------|------------|
+| Trigger | User action | Schedule or internal event |
+| Presentation | Component → Hook | None |
+| Entry point | Action / Route / Workflow | Workflow only |
+| Location | `app/[page]/behaviors/[name]/` | `shared/automations/[name]/` |
+
+### Trigger Types
+
+| Trigger | Description |
+|---------|-------------|
+| **Scheduled** | Cron expression — runs at a fixed time or interval |
+| **Internal event** | Fired by the app via a queue — e.g. after a user signs up |
+
+### Workflow Constraints
+
+Workflow functions (`"use workflow"`) are sandboxed and must be **deterministic and side-effect-free**. All side effects happen in step functions (`"use step"`), which have full Node.js runtime access and are automatically retried on failure.
+
+```typescript
+export async function myAutomation() {
+  "use workflow";
+  // Orchestration only — no DB calls, no fetch, no Date.now()
+  const result = await processStep();
+  return result;
+}
+
+async function processStep() {
+  "use step";
+  // Full runtime access — DB, APIs, file system
+  return db.users.findAll();
+}
+```
