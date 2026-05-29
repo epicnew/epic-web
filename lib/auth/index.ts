@@ -10,11 +10,6 @@ import { magicLink } from "better-auth/plugins";
 
 const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:8080";
 
-// Derive parent domain from NEXT_PUBLIC_BASE_URL for cross-subdomain auth.
-// The proxy puts sandboxes under the same domain as Behave:
-//   Production: 8080-xxx.proxy.epic.new → epic.new
-//   Dev:        8080-xxx.lvh.me:1234    → lvh.me
-//   Local:      localhost:8080           → (disabled)
 function getParentDomain(url: string): string {
   try {
     const { hostname } = new URL(url);
@@ -52,7 +47,9 @@ export const auth = betterAuth({
     additionalFields: {},
   },
   trustedOrigins: [
-    ...(parentDomain ? [`https://${parentDomain}`] : []),
+    ...(parentDomain
+      ? [`https://${parentDomain}`, `https://*.${parentDomain}`]
+      : []),
     "http://localhost:3000",
   ],
   trustedProxyHeaders: true,
