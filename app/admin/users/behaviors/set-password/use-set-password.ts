@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { setPassword } from './actions/set-password.action';
 
 export interface SetPasswordData {
@@ -9,36 +9,20 @@ export interface SetPasswordData {
 }
 
 export function useSetPassword() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleSetPassword = async (data: SetPasswordData) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      // Call server action (no optimistic update for password)
+  // No optimistic update: a password change has no representation in any
+  // cached list, so this is a plain mutation.
+  const mutation = useMutation({
+    mutationFn: async (data: SetPasswordData) => {
       const result = await setPassword(data);
-
       if (!result.success || result.error) {
-        setError(result.error || 'Failed to reset password');
         throw new Error(result.error || 'Failed to reset password');
       }
-    } catch (err) {
-      if (err instanceof Error && !error) {
-        setError(err.message);
-      } else if (!error) {
-        setError('Failed to reset password');
-      }
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    },
+  });
 
   return {
-    handleSetPassword,
-    isLoading,
-    error,
+    handleSetPassword: (data: SetPasswordData) => mutation.mutateAsync(data),
+    isLoading: mutation.isPending,
+    error: mutation.error ? mutation.error.message : null,
   };
 }

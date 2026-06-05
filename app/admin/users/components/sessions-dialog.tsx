@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -20,8 +19,6 @@ import {
 import { useListSessions } from "../behaviors/list-sessions/use-list-sessions";
 import { useRevokeSession } from "../behaviors/revoke-session/use-revoke-session";
 import { useRevokeAllSessions } from "../behaviors/revoke-all-sessions/use-revoke-all-sessions";
-import { useAtomValue } from "jotai";
-import { selectedUserSessionsAtom, sessionsLoadingAtom } from "../state";
 import { toast } from "sonner";
 import { User } from "../state";
 import { formatDistanceToNow } from "date-fns";
@@ -33,19 +30,9 @@ interface SessionsDialogProps {
 }
 
 export function SessionsDialog({ user, open, onOpenChange }: SessionsDialogProps) {
-  const { handleListSessions } = useListSessions();
+  const { sessions, isLoading } = useListSessions(user?.id, open);
   const { handleRevokeSession, isLoading: isRevokingOne } = useRevokeSession();
   const { handleRevokeAllSessions, isLoading: isRevokingAll } = useRevokeAllSessions();
-
-  const sessions = useAtomValue(selectedUserSessionsAtom);
-  const isLoading = useAtomValue(sessionsLoadingAtom);
-
-  // Load sessions when dialog opens
-  useEffect(() => {
-    if (open && user) {
-      handleListSessions(user.id);
-    }
-  }, [open, user]);
 
   const handleRevoke = async (sessionToken: string) => {
     try {

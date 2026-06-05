@@ -12,7 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useAtom, useAtomValue } from "jotai";
-import { usersAtom, usersLoadingAtom, usersTotalAtom, usersPageAtom, usersLimitAtom, User } from "../state";
+import { usersPageAtom, usersLimitAtom, User } from "../state";
+import { useListUsers } from "../behaviors/list-users/use-list-users";
 import { UserRowActions } from "./user-row-actions";
 import { formatDistanceToNow } from "date-fns";
 
@@ -35,9 +36,7 @@ export function UsersDataTable({
   onBanUser,
   onDeleteUser,
 }: UsersDataTableProps) {
-  const users = useAtomValue(usersAtom);
-  const isLoading = useAtomValue(usersLoadingAtom);
-  const total = useAtomValue(usersTotalAtom);
+  const { users, total, isLoading } = useListUsers();
   const [page, setPage] = useAtom(usersPageAtom);
   const limit = useAtomValue(usersLimitAtom);
 

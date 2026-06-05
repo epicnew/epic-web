@@ -1,41 +1,30 @@
 'use client';
 
-import { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { stopImpersonating } from './actions/stop-impersonating.action';
+import { usersKeys } from '../list-users/list-users.query';
+import { sessionsKeys } from '../list-sessions/list-sessions.query';
 
 export function useStopImpersonating() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
-  const handleStopImpersonating = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      // Call server action (will redirect on success)
+  const mutation = useMutation({
+    mutationFn: async () => {
+      // Server action redirects on success.
       const result = await stopImpersonating();
-
       if (!result.success || result.error) {
-        setError(result.error || 'Failed to stop impersonating');
         throw new Error(result.error || 'Failed to stop impersonating');
       }
-
-      // If we reach here, redirect didn't happen (error case)
-    } catch (err) {
-      if (err instanceof Error && !error) {
-        setError(err.message);
-      } else if (!error) {
-        setError('Failed to stop impersonating');
-      }
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: usersKeys.all });
+      queryClient.invalidateQueries({ queryKey: sessionsKeys.all });
+    },
+  });
 
   return {
-    handleStopImpersonating,
-    isLoading,
-    error,
+    handleStopImpersonating: () => mutation.mutateAsync(),
+    isLoading: mutation.isPending,
+    error: mutation.error ? mutation.error.message : null,
   };
 }

@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
-import { useSetAtom } from 'jotai';
-import { usersAtom } from '@/app/admin/users/state';
 import { createUser } from './actions/create-user.action';
+import { usersKeys, type UsersListData } from '../list-users/list-users.query';
+import type { User } from '@/app/admin/users/state';
 
 // Input validation schema
 const createUserSchema = z.object({
@@ -17,75 +17,66 @@ const createUserSchema = z.object({
 export type CreateUserFormData = z.infer<typeof createUserSchema>;
 
 export function useCreateUser() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const setUsers = useSetAtom(usersAtom);
+  const queryClient = useQueryClient();
 
-  const handleCreateUser = async (rawData: unknown) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      // 1. Client-side validation
-      const validated = createUserSchema.parse(rawData);
-
-      // 2. Optimistic update
-      const tempId = `temp-${Date.now()}`;
-      const tempUser = {
-        id: tempId,
-        email: validated.email,
-        name: validated.name,
-        role: validated.role,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        emailVerified: true,
-        image: null,
-        banned: null,
-        banReason: null,
-        banExpires: null,
-        pending: true,
-      };
-      setUsers((prev) => [tempUser, ...prev]);
-
-      // 3. Call server action
-      const result = await createUser(validated);
-
-      // 4. Handle result
+  const mutation = useMutation({
+    mutationFn: async (rawData: unknown) => {
+      const parsed = createUserSchema.safeParse(rawData);
+      if (!parsed.success) {
+        throw new Error(parsed.error.issues.map((e) => e.message).join(', '));
+      }
+      const result = await createUser(parsed.data);
       if (result.error) {
-        // Rollback on error
-        setUsers((prev) => prev.filter((u) => u.id !== tempId));
-        setError(result.error);
         throw new Error(result.error);
       }
+      return result.user;
+    },
+    onMutate: async (rawData: unknown) => {
+      await queryClient.cancelQueries({ queryKey: usersKeys.lists() });
+      const previous = queryClient.getQueriesData<UsersListData>({
+        queryKey: usersKeys.lists(),
+      });
 
-      // Replace temp user with real user
-      if (result.user) {
-        setUsers((prev) =>
-          prev.map((u) => (u.id === tempId ? result.user! : u))
+      const parsed = createUserSchema.safeParse(rawData);
+      if (parsed.success) {
+        const tempUser: User = {
+          id: `temp-${Date.now()}`,
+          email: parsed.data.email,
+          name: parsed.data.name,
+          role: parsed.data.role,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          emailVerified: true,
+          image: null,
+          banned: null,
+          banReason: null,
+          banExpires: null,
+          pending: true,
+        };
+        queryClient.setQueriesData<UsersListData>(
+          { queryKey: usersKeys.lists() },
+          (old) =>
+            old
+              ? { users: [tempUser, ...old.users], total: old.total + 1 }
+              : old
         );
       }
-    } catch (err) {
-      // Error already handled above
-      if (err instanceof z.ZodError) {
-        const errorMessage = err.issues.map((e) => e.message).join(', ');
-        setError(errorMessage);
-      } else if (err instanceof Error) {
-        // Error is already set in the result.error case
-        if (!error) {
-          setError(err.message);
-        }
-      } else {
-        setError('Failed to create user');
-      }
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  };
+
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      context?.previous?.forEach(([key, data]) =>
+        queryClient.setQueryData(key, data)
+      );
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: usersKeys.all });
+    },
+  });
 
   return {
-    handleCreateUser,
-    isLoading,
-    error,
+    handleCreateUser: (rawData: unknown) => mutation.mutateAsync(rawData),
+    isLoading: mutation.isPending,
+    error: mutation.error ? mutation.error.message : null,
   };
 }

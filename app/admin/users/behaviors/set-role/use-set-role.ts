@@ -1,9 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { useSetAtom } from 'jotai';
-import { usersAtom } from '@/app/admin/users/state';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { setRole } from './actions/set-role.action';
+import { usersKeys, type UsersListData } from '../list-users/list-users.query';
 
 export interface SetRoleData {
   userId: string;
@@ -11,56 +10,51 @@ export interface SetRoleData {
 }
 
 export function useSetRole() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const setUsers = useSetAtom(usersAtom);
+  const queryClient = useQueryClient();
 
-  const handleSetRole = async (data: SetRoleData) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      // 1. Optimistic update
-      let previousState: any[] = [];
-      setUsers((prev) => {
-        previousState = prev;
-        return prev.map((u) =>
-          u.id === data.userId
-            ? { ...u, role: data.role, pending: true }
-            : u
-        );
-      });
-
-      // 2. Call server action
+  const mutation = useMutation({
+    mutationFn: async (data: SetRoleData) => {
       const result = await setRole(data);
-
-      // 3. Handle result
       if (!result.success || result.error) {
-        // Rollback on error
-        setUsers(previousState);
-        setError(result.error || 'Failed to update role');
         throw new Error(result.error || 'Failed to update role');
       }
+    },
+    onMutate: async (data: SetRoleData) => {
+      await queryClient.cancelQueries({ queryKey: usersKeys.lists() });
+      const previous = queryClient.getQueriesData<UsersListData>({
+        queryKey: usersKeys.lists(),
+      });
 
-      // Remove pending flag
-      setUsers((prev) =>
-        prev.map((u) => (u.id === data.userId ? { ...u, pending: false } : u))
+      queryClient.setQueriesData<UsersListData>(
+        { queryKey: usersKeys.lists() },
+        (old) =>
+          old
+            ? {
+                ...old,
+                users: old.users.map((u) =>
+                  u.id === data.userId
+                    ? { ...u, role: data.role, pending: true }
+                    : u
+                ),
+              }
+            : old
       );
-    } catch (err) {
-      if (err instanceof Error && !error) {
-        setError(err.message);
-      } else if (!error) {
-        setError('Failed to update role');
-      }
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  };
+
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      context?.previous?.forEach(([key, data]) =>
+        queryClient.setQueryData(key, data)
+      );
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: usersKeys.all });
+    },
+  });
 
   return {
-    handleSetRole,
-    isLoading,
-    error,
+    handleSetRole: (data: SetRoleData) => mutation.mutateAsync(data),
+    isLoading: mutation.isPending,
+    error: mutation.error ? mutation.error.message : null,
   };
 }

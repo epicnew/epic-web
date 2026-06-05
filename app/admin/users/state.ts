@@ -29,10 +29,10 @@ export interface Session {
   impersonatedBy: string | null;
 }
 
-// Users list state
-export const usersAtom = atom<User[]>([]);
-export const usersLoadingAtom = atom(false);
-export const usersTotalAtom = atom(0);
+// --- UI state (Jotai) ---
+// Server state (the users list and a user's sessions) lives in the TanStack
+// Query cache. The atoms below are pure UI state that drive the query keys
+// and client-only concerns.
 
 // Pagination state
 export const usersPageAtom = atom(1);
@@ -49,7 +49,3 @@ export const usersSortDirectionAtom = atom<"asc" | "desc">("asc");
 // Impersonation state
 export const isImpersonatingAtom = atom(false);
 export const impersonatedUserAtom = atom<User | null>(null);
-
-// Selected sessions (for session management dialog)
-export const selectedUserSessionsAtom = atom<Session[]>([]);
-export const sessionsLoadingAtom = atom(false);

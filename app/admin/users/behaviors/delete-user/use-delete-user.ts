@@ -1,58 +1,51 @@
 'use client';
 
-import { useState } from 'react';
-import { useSetAtom } from 'jotai';
-import { usersAtom } from '@/app/admin/users/state';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { deleteUser } from './actions/delete-user.action';
+import { usersKeys, type UsersListData } from '../list-users/list-users.query';
 
 export function useDeleteUser() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const setUsers = useSetAtom(usersAtom);
+  const queryClient = useQueryClient();
 
-  const handleDeleteUser = async (userId: string) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      // 1. Optimistic update - remove user from list
-      let removedUser: any = null;
-      setUsers((prev) => {
-        const userToRemove = prev.find((u) => u.id === userId);
-        removedUser = userToRemove;
-        return prev.filter((u) => u.id !== userId);
-      });
-
-      // 2. Call server action
+  const mutation = useMutation({
+    mutationFn: async (userId: string) => {
       const result = await deleteUser({ userId });
-
-      // 3. Handle result
       if (!result.success || result.error) {
-        // Rollback on error - add user back
-        if (removedUser) {
-          setUsers((prev) => [removedUser, ...prev]);
-        }
-        setError(result.error || 'Failed to delete user');
         throw new Error(result.error || 'Failed to delete user');
       }
+    },
+    onMutate: async (userId: string) => {
+      await queryClient.cancelQueries({ queryKey: usersKeys.lists() });
+      const previous = queryClient.getQueriesData<UsersListData>({
+        queryKey: usersKeys.lists(),
+      });
 
-      // Success - user is already removed from list
-    } catch (err) {
-      // Error already handled above
-      if (err instanceof Error && !error) {
-        setError(err.message);
-      } else if (!error) {
-        setError('Failed to delete user');
-      }
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      queryClient.setQueriesData<UsersListData>(
+        { queryKey: usersKeys.lists() },
+        (old) =>
+          old
+            ? {
+                users: old.users.filter((u) => u.id !== userId),
+                total: Math.max(0, old.total - 1),
+              }
+            : old
+      );
+
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      context?.previous?.forEach(([key, data]) =>
+        queryClient.setQueryData(key, data)
+      );
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: usersKeys.all });
+    },
+  });
 
   return {
-    handleDeleteUser,
-    isLoading,
-    error,
+    handleDeleteUser: (userId: string) => mutation.mutateAsync(userId),
+    isLoading: mutation.isPending,
+    error: mutation.error ? mutation.error.message : null,
   };
 }

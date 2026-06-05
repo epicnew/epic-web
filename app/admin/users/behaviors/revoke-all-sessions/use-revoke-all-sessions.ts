@@ -1,54 +1,46 @@
 'use client';
 
-import { useState } from 'react';
-import { useSetAtom } from 'jotai';
-import { selectedUserSessionsAtom } from '@/app/admin/users/state';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { revokeAllSessions } from './actions/revoke-all-sessions.action';
+import { sessionsKeys } from '../list-sessions/list-sessions.query';
+import type { Session } from '@/app/admin/users/state';
 
 export function useRevokeAllSessions() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const setSessions = useSetAtom(selectedUserSessionsAtom);
+  const queryClient = useQueryClient();
 
-  const handleRevokeAllSessions = async (userId: string) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      // 1. Optimistic update - clear all sessions
-      let previousSessions: any[] = [];
-      setSessions((prev) => {
-        previousSessions = prev;
-        return [];
-      });
-
-      // 2. Call server action
+  const mutation = useMutation({
+    mutationFn: async (userId: string) => {
       const result = await revokeAllSessions({ userId });
-
-      // 3. Handle result
       if (!result.success || result.error) {
-        // Rollback on error - restore sessions
-        setSessions(previousSessions);
-        setError(result.error || 'Failed to revoke all sessions');
         throw new Error(result.error || 'Failed to revoke all sessions');
       }
+    },
+    onMutate: async (userId: string) => {
+      await queryClient.cancelQueries({ queryKey: sessionsKeys.list(userId) });
+      const previous = queryClient.getQueryData<Session[]>(
+        sessionsKeys.list(userId)
+      );
 
-      // Success - sessions already cleared
-    } catch (err) {
-      if (err instanceof Error && !error) {
-        setError(err.message);
-      } else if (!error) {
-        setError('Failed to revoke all sessions');
+      queryClient.setQueryData<Session[]>(sessionsKeys.list(userId), []);
+
+      return { previous, userId };
+    },
+    onError: (_err, _vars, context) => {
+      if (context) {
+        queryClient.setQueryData(
+          sessionsKeys.list(context.userId),
+          context.previous
+        );
       }
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    },
+    onSettled: (_data, _err, userId) => {
+      queryClient.invalidateQueries({ queryKey: sessionsKeys.list(userId) });
+    },
+  });
 
   return {
-    handleRevokeAllSessions,
-    isLoading,
-    error,
+    handleRevokeAllSessions: (userId: string) => mutation.mutateAsync(userId),
+    isLoading: mutation.isPending,
+    error: mutation.error ? mutation.error.message : null,
   };
 }

@@ -1,10 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
-import { useSetAtom } from 'jotai';
-import { usersAtom } from '@/app/admin/users/state';
 import { updateUser } from './actions/update-user.action';
+import { usersKeys, type UsersListData } from '../list-users/list-users.query';
 
 // Input validation schema
 const updateUserSchema = z.object({
@@ -17,71 +16,66 @@ const updateUserSchema = z.object({
 export type UpdateUserFormData = z.infer<typeof updateUserSchema>;
 
 export function useUpdateUser() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const setUsers = useSetAtom(usersAtom);
+  const queryClient = useQueryClient();
 
-  const handleUpdateUser = async (rawData: unknown) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      // 1. Client-side validation
-      const validated = updateUserSchema.parse(rawData);
-
-      // 2. Optimistic update
-      let previousState: any[] = [];
-      setUsers((prev) => {
-        previousState = prev;
-        return prev.map((u) =>
-          u.id === validated.userId
-            ? {
-                ...u,
-                ...(validated.email && { email: validated.email }),
-                ...(validated.name && { name: validated.name }),
-                ...(validated.role && { role: validated.role }),
-                pending: true,
-              }
-            : u
-        );
-      });
-
-      // 3. Call server action
-      const result = await updateUser(validated);
-
-      // 4. Handle result
+  const mutation = useMutation({
+    mutationFn: async (rawData: unknown) => {
+      const parsed = updateUserSchema.safeParse(rawData);
+      if (!parsed.success) {
+        throw new Error(parsed.error.issues.map((e) => e.message).join(', '));
+      }
+      const result = await updateUser(parsed.data);
       if (result.error) {
-        // Rollback on error
-        setUsers(previousState);
-        setError(result.error);
         throw new Error(result.error);
       }
+      return result.user;
+    },
+    onMutate: async (rawData: unknown) => {
+      await queryClient.cancelQueries({ queryKey: usersKeys.lists() });
+      const previous = queryClient.getQueriesData<UsersListData>({
+        queryKey: usersKeys.lists(),
+      });
 
-      // Update with real data from server
-      if (result.user) {
-        setUsers((prev) =>
-          prev.map((u) => (u.id === validated.userId ? result.user! : u))
+      const parsed = updateUserSchema.safeParse(rawData);
+      if (parsed.success) {
+        const { userId, email, name, role } = parsed.data;
+        queryClient.setQueriesData<UsersListData>(
+          { queryKey: usersKeys.lists() },
+          (old) =>
+            old
+              ? {
+                  ...old,
+                  users: old.users.map((u) =>
+                    u.id === userId
+                      ? {
+                          ...u,
+                          ...(email && { email }),
+                          ...(name && { name }),
+                          ...(role && { role }),
+                          pending: true,
+                        }
+                      : u
+                  ),
+                }
+              : old
         );
       }
-    } catch (err) {
-      // Error handling
-      if (err instanceof z.ZodError) {
-        const errorMessage = err.issues.map((e) => e.message).join(', ');
-        setError(errorMessage);
-      } else if (err instanceof Error && !error) {
-        setError(err.message);
-      } else if (!error) {
-        setError('Failed to update user');
-      }
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  };
+
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      context?.previous?.forEach(([key, data]) =>
+        queryClient.setQueryData(key, data)
+      );
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: usersKeys.all });
+    },
+  });
 
   return {
-    handleUpdateUser,
-    isLoading,
-    error,
+    handleUpdateUser: (rawData: unknown) => mutation.mutateAsync(rawData),
+    isLoading: mutation.isPending,
+    error: mutation.error ? mutation.error.message : null,
   };
 }
