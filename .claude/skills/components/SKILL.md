@@ -12,7 +12,10 @@ This skill creates React components that follow the Epic three-layer architectur
 ## Architecture Context
 
 ```
-Frontend (Browser): Components -> Hooks -> State (Jotai)
+page.tsx (Server Component)      -> prefetch + HydrationBoundary
+  └─ PageContent (Client)        -> Components -> Hooks
+                                       Hooks -> TanStack Query (server state)
+                                              -> Jotai atoms (UI state only)
 ```
 
 Components:
@@ -21,6 +24,34 @@ Components:
 - NO business logic
 - Use TypeScript interfaces for props
 - MUST add `data-testid` attributes for testing
+
+### Page Server Component + prefetch
+
+A page that renders a read is a **Server Component** that prefetches the query
+and hydrates a client content component. Keep the page prefetch-only; put the
+interactive UI (dialog state, hook calls) in the `*-content.tsx` client child.
+
+```tsx
+// page.tsx (Server Component — no 'use client')
+import { dehydrate, HydrationBoundary } from '@tanstack/react-query';
+import { getQueryClient } from '@/lib/get-query-client';
+import { listItemsQuery, defaultParams } from './behaviors/list-items/list-items.query';
+import { PageContent } from './page-content';
+
+export default async function Page() {
+  const queryClient = getQueryClient();
+  await queryClient.prefetchQuery(listItemsQuery(defaultParams));
+  return (
+    <HydrationBoundary state={dehydrate(queryClient)}>
+      <PageContent />
+    </HydrationBoundary>
+  );
+}
+```
+
+The client component consumes the data through a `useQuery` hook — it never
+reads the cache directly. Default prefetch params must match the client's first
+render so the hydrated query key matches.
 
 ## Before Writing a Component
 
@@ -165,25 +196,25 @@ export function ComponentName({ onSuccess }: ComponentNameProps) {
 
 ## State Management
 
-Define Jotai atoms in page's `state.ts`:
+Server state (lists, records) comes from hooks backed by TanStack Query — never
+store it in Jotai. `state.ts` holds **UI state only** (dialogs, selections,
+filter/sort/page inputs that feed query keys):
 
 ```typescript
 import { atom } from 'jotai';
 
-export interface Item {
-  id: string;
-  name: string;
-  pending?: boolean;  // For optimistic updates
-}
-
-export const itemsAtom = atom<Item[]>([]);
-export const isLoadingAtom = atom(false);
+// UI state only — server data lives in the TanStack Query cache.
+export const pageAtom = atom(1);
+export const searchAtom = atom('');
+export const dialogAtom = atom<'add' | 'edit' | null>(null);
 ```
 
 ## Constraints
 
 - NEVER import database clients in components
 - NEVER call server actions directly - use hooks
+- NEVER read the query cache directly from a component - go through a hook
+- NEVER store server state in Jotai - use the query cache
 - NEVER put business logic in components
 - NEVER access window object in server components
 - ALWAYS delegate state management to hooks

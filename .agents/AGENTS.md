@@ -8,9 +8,11 @@ This file provides guidance to coding agents (Claude Code, Codex, OpenCode) work
 
 | Layer | Runs On | Components | May Import | Must NOT Import |
 |-------|---------|------------|------------|-----------------|
-| **Frontend** | Browser | Components, Hooks, States | React, Zod, Jotai, Actions | Drizzle, Integrations, server-only |
+| **Frontend** | Browser | Components, Hooks, Queries, States | React, Zod, TanStack Query, Jotai, Actions | Drizzle, Integrations, server-only |
 | **Backend** | Server | Actions, Routes | Integrations, auth utilities | React, Jotai, direct DB access |
 | **Infrastructure** | Server | Integrations, Models | Drizzle, external APIs | React, Actions, Hooks |
+
+**Server state** (lists, records, caching) is owned by **TanStack Query** (`useQuery`/`useMutation`); **Jotai is for UI state only** (dialogs, selections, filter/sort/page inputs). Reads use a `[name].query.ts` options file with server prefetch + `HydrationBoundary`; mutations are optimistic by default.
 
 See `docs/references/architecture.md` for detailed patterns and code examples.
 

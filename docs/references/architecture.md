@@ -39,10 +39,13 @@
 | Component | Responsibility |
 |-----------|----------------|
 | **Components** | Render UI, collect user input, consume hooks |
-| **Hooks** | Validate input (Zod), manage state (Jotai), optimistic updates, call Actions |
-| **States** | Jotai atoms for client-side state |
+| **Hooks** | Validate input (Zod), read/write server state via TanStack Query (`useQuery`/`useMutation`), manage UI state (Jotai), optimistic updates, call Actions |
+| **Queries** | `[name].query.ts` options files (`queryKey` + `queryFn`) shared by server prefetch and client hooks |
+| **States** | Jotai atoms for **UI state only** (dialogs, selections, filter/sort/page inputs) |
 
-**May import**: React, Zod, Jotai, Actions
+**Server state vs UI state**: All server state (lists, records, their loading/error/cache) lives in the **TanStack Query** cache. **Jotai is retained for pure UI state** — never for server data. Filter/sort/pagination atoms are UI state that feed query keys.
+
+**May import**: React, Zod, Jotai, TanStack Query, Actions
 
 **Must NOT import**: Database clients, Drizzle, Integrations, Models, server-only code
 
@@ -150,6 +153,74 @@ fetchEventSource(`/${page}/behaviors/${behavior}`, {
 
 ---
 
+## Server State (TanStack Query)
+
+Server state is owned by the TanStack Query cache. Actions are the `queryFn`/`mutationFn` (Action-first); Routes are only for streaming/webhooks. The root layout wraps the app in `QueryClientProvider` using a `getQueryClient()` helper — a fresh `QueryClient` per request on the server, a singleton on the client — with a default `staleTime > 0`.
+
+### The `[name].query.ts` convention
+
+Each read behavior exports a query-options factory next to its action so the server prefetch and the client hook agree on key and function:
+
+```typescript
+// behaviors/list-items/list-items.query.ts
+export const itemsKeys = {
+  all: ['items'] as const,
+  lists: () => [...itemsKeys.all, 'list'] as const,
+  list: (params: ListParams) => [...itemsKeys.lists(), params] as const,
+};
+
+export function listItemsQuery(params: ListParams) {
+  return queryOptions({
+    queryKey: itemsKeys.list(params),
+    queryFn: async () => {
+      const result = await listItems(params);   // the Action
+      if (result.error) throw new Error(result.error);
+      return result.data;
+    },
+  });
+}
+```
+
+### Reads — server prefetch + hydrate
+
+The page is a Server Component that prefetches and hands the dehydrated cache to a client child. **Treat Server Components as prefetch-only** — no `fetchQuery` rendered server-side.
+
+```tsx
+// page.tsx (Server Component)
+const queryClient = getQueryClient();
+await queryClient.prefetchQuery(listItemsQuery(defaultParams));
+return (
+  <HydrationBoundary state={dehydrate(queryClient)}>
+    <PageContent />   {/* client component calls useQuery(listItemsQuery(params)) */}
+  </HydrationBoundary>
+);
+```
+
+Default prefetch params must match the client's first render (atom initial values) so the query key — and thus hydration — matches. Filter/sort/page atoms are UI state that feed the key.
+
+### Mutations — optimistic by default
+
+`useMutation` snapshots in `onMutate`, rolls back in `onError`, and invalidates in `onSettled`. Keep a hook's `{ handleX, isLoading, error }` shape so components stay untouched.
+
+```typescript
+useMutation({
+  mutationFn: (input) => createItem(input),
+  onMutate: async (input) => {
+    await queryClient.cancelQueries({ queryKey: itemsKeys.lists() });
+    const previous = queryClient.getQueriesData({ queryKey: itemsKeys.lists() });
+    queryClient.setQueriesData({ queryKey: itemsKeys.lists() }, optimistic(input));
+    return { previous };
+  },
+  onError: (_e, _v, ctx) =>
+    ctx?.previous?.forEach(([key, data]) => queryClient.setQueryData(key, data)),
+  onSettled: () => queryClient.invalidateQueries({ queryKey: itemsKeys.all }),
+});
+```
+
+Mutations with no list representation (e.g. set-password, redirect-on-success actions) are plain mutations without `onMutate`.
+
+---
+
 ## Thin Client, Fat Server
 
 The frontend coordinates nothing. It triggers intent and reacts to outcomes.
@@ -164,8 +235,12 @@ The frontend coordinates nothing. It triggers intent and reacts to outcomes.
 ### Server Constraints
 
 - Owns all business logic and orchestration
-- Owns sequencing, retries, and transactional boundaries
+- Owns sequencing and transactional boundaries
 - Owns integrations and domain rules
+
+### Caching is a client concern (TanStack Query)
+
+Adopting TanStack Query consciously relaxes the strict "thin client" rule: the client now owns **server-state caching, request retries, and optimistic UI** via the query cache. This is data-fetching infrastructure, not business logic — the rule that the client must not encode **business rules, orchestration, or sequencing** still holds.
 
 ### Review Heuristic
 
@@ -173,9 +248,11 @@ The frontend coordinates nothing. It triggers intent and reacts to outcomes.
 
 Violations:
 - Calling multiple backend endpoints from one hook
-- Branching based on backend semantics
-- Handling retries or error recovery strategy
+- Branching based on backend **business** semantics
+- Encoding domain rules or multi-step orchestration on the client
 - Stitching partial backend results together
+
+(Cache invalidation, query retries, and optimistic updates are **not** violations — they are TanStack Query's job.)
 
 ---
 

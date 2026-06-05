@@ -7,24 +7,30 @@ description: Write React hooks following the Epic architecture patterns. Use whe
 
 ## Overview
 
-This skill creates React hooks that follow the Epic three-layer architecture. Hooks belong to the **Frontend layer** and handle state management, validation, server action calls, and optimistic updates.
+This skill creates React hooks that follow the Epic three-layer architecture. Hooks belong to the **Frontend layer**. Server state is owned by **TanStack Query** (`useQuery`/`useMutation`); **Jotai is retained for UI state only** (dialogs, selections, filter/sort/page inputs).
 
 ## Architecture Context
 
 ```
-Frontend (Browser): Components -> Hooks -> State (Jotai)
-                          |
+Frontend (Browser): Components -> Hooks -> TanStack Query cache (server state)
+                          |                 Jotai atoms (UI state only)
                           v
 Backend (Server): Actions (atomic) OR Routes (streaming)
 ```
 
 Hooks:
 - Run in the browser (Frontend layer)
-- Manage state with Jotai atoms
+- Read server state with `useQuery`; write it with `useMutation`
+- Use Jotai atoms ONLY for UI state — never for server data
 - Validate inputs with Zod
-- Call ONE backend entry point (Action or Route, never both)
-- Handle optimistic updates and rollback
+- Call ONE backend entry point (Action or Route, never both) as the `queryFn`/`mutationFn`
+- Handle optimistic updates and rollback through the query cache
 - NEVER access database or import server-only code
+
+### Read vs Write
+
+- **Read** → `useQuery` with a `[name].query.ts` options file (shared `queryKey` + `queryFn`). The page Server Component prefetches it and hydrates via `HydrationBoundary`.
+- **Write** → `useMutation`, optimistic by default (`onMutate` snapshot, `onError` rollback, `onSettled` invalidate). Mutations with no list representation are plain mutations.
 
 ### Backend Entry Point Rule
 
@@ -81,75 +87,120 @@ Follow the Epic Hook specification format:
 
 ## Implementation Pattern
 
+### Query options file (`[name].query.ts`)
+
 ```typescript
-import { useAtom } from 'jotai';
-import { useState } from 'react';
-import { z } from 'zod';
-import { actionName } from './actions/action-name.action';
-import { itemsAtom } from '@/app/[role]/[page]/state';
+import { queryOptions } from '@tanstack/react-query';
+import { listItems } from './actions/list-items.action';
 
-// Validation schema
-const InputSchema = z.object({
-  name: z.string().min(1).max(100),
-});
+export const itemsKeys = {
+  all: ['items'] as const,
+  lists: () => [...itemsKeys.all, 'list'] as const,
+  list: (params: ListParams) => [...itemsKeys.lists(), params] as const,
+};
 
-export function useBehaviorName() {
-  const [items, setItems] = useAtom(itemsAtom);
-  const [isPending, setIsPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export function listItemsQuery(params: ListParams) {
+  return queryOptions({
+    queryKey: itemsKeys.list(params),
+    queryFn: async () => {
+      const result = await listItems(params);   // the Action
+      if (result.error) throw new Error(result.error);
+      return result.data;
+    },
+  });
+}
+```
 
-  const handleAction = async (data: unknown) => {
-    // 1. Validate input
-    const result = InputSchema.safeParse(data);
-    if (!result.success) {
-      setError(result.error.errors[0].message);
-      return;
-    }
+### Read hook (`useQuery`)
 
-    setIsPending(true);
-    setError(null);
+```typescript
+'use client';
+import { useQuery } from '@tanstack/react-query';
+import { useAtomValue } from 'jotai';
+import { listItemsQuery } from './list-items.query';
+import { pageAtom, searchAtom } from '@/app/[role]/[page]/state'; // UI state
 
-    // 2. Optimistic update
-    const optimisticItem = {
-      ...result.data,
-      id: crypto.randomUUID(),
-      pending: true,
-    };
-    setItems(prev => [...prev, optimisticItem]);
+export function useListItems() {
+  // UI-state atoms feed the query key.
+  const page = useAtomValue(pageAtom);
+  const search = useAtomValue(searchAtom);
 
-    try {
-      // 3. Call server action
-      const response = await actionName(result.data);
-
-      if (response.success && response.data) {
-        // 4. Replace optimistic with real data
-        setItems(prev =>
-          prev.map(item =>
-            item.id === optimisticItem.id ? response.data : item
-          )
-        );
-      } else {
-        // 5. Rollback on failure
-        setItems(prev => prev.filter(item => item.id !== optimisticItem.id));
-        setError(response.error || 'Operation failed');
-      }
-    } catch (err) {
-      // 6. Rollback on error
-      setItems(prev => prev.filter(item => item.id !== optimisticItem.id));
-      setError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setIsPending(false);
-    }
-  };
+  const query = useQuery(listItemsQuery({ page, search }));
 
   return {
-    items,
-    isPending,
-    error,
-    handleAction,
+    items: query.data?.items ?? [],
+    isLoading: query.isPending,
+    error: query.error ? (query.error as Error).message : null,
   };
 }
 ```
+
+The page Server Component prefetches and hydrates:
+
+```tsx
+// page.tsx (Server Component)
+const queryClient = getQueryClient();
+await queryClient.prefetchQuery(listItemsQuery(defaultParams));
+return (
+  <HydrationBoundary state={dehydrate(queryClient)}>
+    <PageContent />
+  </HydrationBoundary>
+);
+```
+
+### Mutation hook (`useMutation`, optimistic)
+
+Preserve a `{ handleX, isLoading, error }` shape so components stay untouched.
+
+```typescript
+'use client';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { z } from 'zod';
+import { createItem } from './actions/create-item.action';
+import { itemsKeys } from '../list-items/list-items.query';
+
+const InputSchema = z.object({ name: z.string().min(1).max(100) });
+
+export function useCreateItem() {
+  const queryClient = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: async (raw: unknown) => {
+      const parsed = InputSchema.safeParse(raw);
+      if (!parsed.success) {
+        throw new Error(parsed.error.issues.map((e) => e.message).join(', '));
+      }
+      const result = await createItem(parsed.data);
+      if (result.error) throw new Error(result.error);
+      return result.data;
+    },
+    onMutate: async (raw) => {
+      await queryClient.cancelQueries({ queryKey: itemsKeys.lists() });
+      const previous = queryClient.getQueriesData({ queryKey: itemsKeys.lists() });
+      const parsed = InputSchema.safeParse(raw);
+      if (parsed.success) {
+        queryClient.setQueriesData({ queryKey: itemsKeys.lists() }, (old: any) =>
+          old
+            ? { ...old, items: [{ ...parsed.data, id: `temp-${Date.now()}`, pending: true }, ...old.items] }
+            : old
+        );
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, ctx: any) =>
+      ctx?.previous?.forEach(([key, data]: any) => queryClient.setQueryData(key, data)),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: itemsKeys.all }),
+  });
+
+  return {
+    handleCreateItem: (raw: unknown) => mutation.mutateAsync(raw),
+    isLoading: mutation.isPending,
+    error: mutation.error ? mutation.error.message : null,
+  };
+}
+```
+
+Mutations with no list representation (e.g. set-password, redirect-on-success) are plain mutations — no `onMutate`/`onError` cache work.
 
 ## Route Consumption Patterns
 
@@ -272,36 +323,35 @@ export function useStreamingBehavior() {
 - Use `safeParse` and handle validation errors gracefully
 - Return early with error messages for invalid input
 
-### 2. Optimistic Updates
-- Add temporary records with `pending: true` flag
-- Generate temporary IDs with `crypto.randomUUID()`
-- Always rollback on failure
-- Replace optimistic items with real data on success
+### 2. Optimistic Updates (via the query cache)
+- `onMutate`: cancel in-flight queries, snapshot with `getQueriesData`, apply the optimistic change with `setQueriesData` (temp id, `pending: true`)
+- `onError`: restore the snapshot
+- `onSettled`: `invalidateQueries` to reconcile with the server
 
 ### 3. Error Handling
-- Set loading states appropriately
-- Clear previous errors before new operations
+- Surface `mutation.error` / `query.error` as a string; `isPending` for loading
+- Throw inside `mutationFn` so callers (`mutateAsync`) reject and components can `try/catch`
 - Provide descriptive error messages
-- Use try/catch with proper error type checking
 
 ### 4. State Management
-- Use Jotai atoms defined in page's `state.ts`
-- Return consistent object shape: `{ data, isPending, error, handlers }`
-- Keep state updates atomic and predictable
+- Server state lives in the TanStack Query cache — never in Jotai
+- Use Jotai atoms (from `state.ts`) ONLY for UI state; filter/sort/page atoms feed query keys
+- Return a consistent shape: reads `{ data, isLoading, error }`; mutations `{ handleX, isLoading, error }`
 
 ### 5. Server Action Calls
-- Import actions from `./actions/[action-name].action`
-- Handle standard response: `{ success: boolean, data?: T, error?: string }`
+- Actions are the `queryFn`/`mutationFn` (import from `./actions/[name].action`)
+- Throw on `result.error` so the query/mutation enters its error state
 - Never call actions directly from components
 
 ## Constraints
 
 - NEVER import database clients or models
+- NEVER store server state in Jotai — use the query cache
 - NEVER call more than one backend entry point (action or route)
 - NEVER put business logic in hooks - that belongs in actions/routes
-- ALWAYS include both loading and error states
-- ALWAYS validate input before calling backend
-- ALWAYS implement optimistic updates for better UX (actions)
+- ALWAYS include both loading and error states (`isPending`/`error`)
+- ALWAYS validate input with Zod inside the `mutationFn`
+- ALWAYS make list mutations optimistic (`onMutate`/`onError`/`onSettled`); plain mutations otherwise
 - ALWAYS support cancellation for streaming behaviors (routes)
 
 ## Example Specification
@@ -362,41 +412,36 @@ Generate test files at `[behavior-path]/tests/use-[behavior-name].test.tsx`.
 
 ### Test Structure
 
+Wrap the hook in a `QueryClientProvider` with retries disabled. Use a fresh
+`QueryClient` per test so cache state never leaks between tests.
+
 ```typescript
 import { describe, it, expect } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
-import { Provider } from 'jotai';
-import { useHydrateAtoms } from 'jotai/utils';
-import { useBehaviorName } from '../use-[behavior-name]';
-import { itemsAtom } from '@/app/[role]/[page]/state';
+import { renderHook, act, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Provider as JotaiProvider } from 'jotai';
+import { useCreateItem } from '../use-create-item';
 
-// Helper to set initial atom state
-function TestProvider({ initialValues, children }) {
-  return (
-    <Provider>
-      <HydrateAtoms initialValues={initialValues}>{children}</HydrateAtoms>
-    </Provider>
+function createWrapper() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={queryClient}>
+      <JotaiProvider>{children}</JotaiProvider>
+    </QueryClientProvider>
   );
 }
 
-describe('useBehaviorName', () => {
-  it('should [behavior] when [condition]', async () => {
-    // PreState -> Initial atom values
-    const wrapper = ({ children }) => (
-      <TestProvider initialValues={[[itemsAtom, []]]}>
-        {children}
-      </TestProvider>
-    );
+describe('useCreateItem', () => {
+  it('creates an item', async () => {
+    const { result } = renderHook(() => useCreateItem(), { wrapper: createWrapper() });
 
-    const { result } = renderHook(() => useBehaviorName(), { wrapper });
-
-    // Steps -> Execute handler
     await act(async () => {
-      await result.current.handleAction({ name: 'New Item' });
+      await result.current.handleCreateItem({ name: 'New Item' });
     });
 
-    // PostState -> Verify state changes
-    expect(result.current.isLoading).toBe(false);
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.error).toBeNull();
   });
 });
@@ -406,14 +451,15 @@ describe('useBehaviorName', () => {
 
 | Spec | Test |
 |------|------|
-| PreState (atoms) | Initial atom values in TestProvider |
-| `Call:` | `await result.current.handler(...)` |
-| `Returns:` | Verify handler completes |
-| `Throws:` | `expect(result.current.error).toBe(...)` |
-| PostState (atoms) | `expect(result.current.state).toBe(...)` |
+| PreState | Seed the cache with `queryClient.setQueryData(...)` if needed |
+| `Call:` | `await result.current.handleX(...)` |
+| `Returns:` | Verify the promise resolves / cache updated |
+| `Throws:` | `await expect(result.current.handleX(...)).rejects` or assert `result.current.error` |
+| PostState | Assert returned `data`/`error`, or read `queryClient.getQueryData(...)` |
 
 ### Principles
 
-- Test state transitions, not database
+- Fresh `QueryClient` per test; `retry: false`
+- Test state transitions and cache effects, not the database
 - Mock server actions if needed (hooks don't touch DB directly)
 - Start with ONE test (happy path)
