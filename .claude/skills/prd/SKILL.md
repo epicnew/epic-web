@@ -37,7 +37,7 @@ Do not put anything above the `# PRD-[N] [Title]` heading except the front matte
 When <situation>, I want to <motivation>, so I can <expected outcome>.
 ```
 
-- A **Flow** is a user workflow that connects behaviors across pages in order. Each step depends on the ones before it. Flows capture the implicit dependencies between behaviors.
+- A **Flow** is a user workflow that connects behaviors across pages in order. Each step depends on the ones before it. Flows capture the implicit dependencies between behaviors. Capture them carefully — the **break** skill uses Flows to order issues and populate each issue's `depends_on` dependencies.
 
 ## Specification Format
 
