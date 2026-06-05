@@ -20,47 +20,38 @@ export function useCreateUser() {
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: async (rawData: unknown) => {
-      const parsed = createUserSchema.safeParse(rawData);
-      if (!parsed.success) {
-        throw new Error(parsed.error.issues.map((e) => e.message).join(', '));
-      }
-      const result = await createUser(parsed.data);
+    mutationFn: async (data: CreateUserFormData) => {
+      const result = await createUser(data);
       if (result.error) {
         throw new Error(result.error);
       }
       return result.user;
     },
-    onMutate: async (rawData: unknown) => {
+    onMutate: async (data: CreateUserFormData) => {
       await queryClient.cancelQueries({ queryKey: usersKeys.lists() });
       const previous = queryClient.getQueriesData<UsersListData>({
         queryKey: usersKeys.lists(),
       });
 
-      const parsed = createUserSchema.safeParse(rawData);
-      if (parsed.success) {
-        const tempUser: User = {
-          id: `temp-${Date.now()}`,
-          email: parsed.data.email,
-          name: parsed.data.name,
-          role: parsed.data.role,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          emailVerified: true,
-          image: null,
-          banned: null,
-          banReason: null,
-          banExpires: null,
-          pending: true,
-        };
-        queryClient.setQueriesData<UsersListData>(
-          { queryKey: usersKeys.lists() },
-          (old) =>
-            old
-              ? { users: [tempUser, ...old.users], total: old.total + 1 }
-              : old
-        );
-      }
+      const tempUser: User = {
+        id: `temp-${Date.now()}`,
+        email: data.email,
+        name: data.name,
+        role: data.role,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        emailVerified: true,
+        image: null,
+        banned: null,
+        banReason: null,
+        banExpires: null,
+        pending: true,
+      };
+      queryClient.setQueriesData<UsersListData>(
+        { queryKey: usersKeys.lists() },
+        (old) =>
+          old ? { users: [tempUser, ...old.users], total: old.total + 1 } : old
+      );
 
       return { previous };
     },
@@ -74,8 +65,20 @@ export function useCreateUser() {
     },
   });
 
+  // Validate once at the call site; the action and the optimistic update both
+  // receive already-parsed data.
+  const handleCreateUser = (rawData: unknown) => {
+    const parsed = createUserSchema.safeParse(rawData);
+    if (!parsed.success) {
+      return Promise.reject(
+        new Error(parsed.error.issues.map((e) => e.message).join(', '))
+      );
+    }
+    return mutation.mutateAsync(parsed.data);
+  };
+
   return {
-    handleCreateUser: (rawData: unknown) => mutation.mutateAsync(rawData),
+    handleCreateUser,
     isLoading: mutation.isPending,
     error: mutation.error ? mutation.error.message : null,
   };

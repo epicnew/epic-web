@@ -19,47 +19,40 @@ export function useUpdateUser() {
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: async (rawData: unknown) => {
-      const parsed = updateUserSchema.safeParse(rawData);
-      if (!parsed.success) {
-        throw new Error(parsed.error.issues.map((e) => e.message).join(', '));
-      }
-      const result = await updateUser(parsed.data);
+    mutationFn: async (data: UpdateUserFormData) => {
+      const result = await updateUser(data);
       if (result.error) {
         throw new Error(result.error);
       }
       return result.user;
     },
-    onMutate: async (rawData: unknown) => {
+    onMutate: async (data: UpdateUserFormData) => {
       await queryClient.cancelQueries({ queryKey: usersKeys.lists() });
       const previous = queryClient.getQueriesData<UsersListData>({
         queryKey: usersKeys.lists(),
       });
 
-      const parsed = updateUserSchema.safeParse(rawData);
-      if (parsed.success) {
-        const { userId, email, name, role } = parsed.data;
-        queryClient.setQueriesData<UsersListData>(
-          { queryKey: usersKeys.lists() },
-          (old) =>
-            old
-              ? {
-                  ...old,
-                  users: old.users.map((u) =>
-                    u.id === userId
-                      ? {
-                          ...u,
-                          ...(email && { email }),
-                          ...(name && { name }),
-                          ...(role && { role }),
-                          pending: true,
-                        }
-                      : u
-                  ),
-                }
-              : old
-        );
-      }
+      const { userId, email, name, role } = data;
+      queryClient.setQueriesData<UsersListData>(
+        { queryKey: usersKeys.lists() },
+        (old) =>
+          old
+            ? {
+                ...old,
+                users: old.users.map((u) =>
+                  u.id === userId
+                    ? {
+                        ...u,
+                        ...(email && { email }),
+                        ...(name && { name }),
+                        ...(role && { role }),
+                        pending: true,
+                      }
+                    : u
+                ),
+              }
+            : old
+      );
 
       return { previous };
     },
@@ -73,8 +66,20 @@ export function useUpdateUser() {
     },
   });
 
+  // Validate once at the call site; the action and the optimistic update both
+  // receive already-parsed data.
+  const handleUpdateUser = (rawData: unknown) => {
+    const parsed = updateUserSchema.safeParse(rawData);
+    if (!parsed.success) {
+      return Promise.reject(
+        new Error(parsed.error.issues.map((e) => e.message).join(', '))
+      );
+    }
+    return mutation.mutateAsync(parsed.data);
+  };
+
   return {
-    handleUpdateUser: (rawData: unknown) => mutation.mutateAsync(rawData),
+    handleUpdateUser,
     isLoading: mutation.isPending,
     error: mutation.error ? mutation.error.message : null,
   };

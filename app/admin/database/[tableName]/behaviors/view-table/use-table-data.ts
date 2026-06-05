@@ -2,13 +2,18 @@
 
 import { useState, useCallback, useRef } from "react";
 import { useAtom } from "jotai";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { sortAtom, filterAtom } from "../../state";
-import { tableDataQuery } from "./view-table.query";
+import { tableDataQuery, tableDataKeys } from "./view-table.query";
 
 const DEBOUNCE_MS = 300;
 
 export function useTableData(tableName: string) {
+  const queryClient = useQueryClient();
   const [sort, setSort] = useAtom(sortAtom);
   const [filter, setFilter] = useAtom(filterAtom);
   const [localPage, setLocalPage] = useState(1);
@@ -56,8 +61,8 @@ export function useTableData(tableName: string) {
 
   // Refresh function
   const handleRefresh = useCallback(() => {
-    query.refetch();
-  }, [query]);
+    queryClient.invalidateQueries({ queryKey: tableDataKeys.table(tableName) });
+  }, [queryClient, tableName]);
 
   return {
     rows: data?.rows ?? [],
