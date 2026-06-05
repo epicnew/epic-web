@@ -23,14 +23,14 @@ This build process leverages a dedicated skill for each layer of the architectur
 
 Each skill documents the project's three-layer architecture patterns for its layer, ensuring consistency, proper debug logging, and error handling. Load the relevant skill at each step.
 
-**Prerequisites**: If the page.tsx the behavior belongs to doesn't exist yet, create an empty page with the 'use client' directive.
+**Prerequisites**: If the page the behavior belongs to doesn't exist yet, create it. A page that renders a read is a **Server Component** that prefetches the query and hydrates a client `page-content.tsx` via `HydrationBoundary` (see the **components** skill). A page that only hosts forms/dialogs can be a plain client page.
 
 # Steps to Execute the Issue
 
 Here is the order of steps to execute the issue: 
 
 1. Create or Update Integrations (if necessary)
-2. Create or Update State (Jotai Atoms)
+2. Create or Update UI State (Jotai) and Query Options
 3. Create or Update Actions
 4. Create or Update Hooks
 5. Create or Update Components
@@ -60,29 +60,34 @@ Details for each step are provided below.
 
 The integrations skill documents all implementation details following the project's Infrastructure layer patterns. If the behavior needs database models, also load the **models** skill.
 
-## 2. Create or Update State (Jotai Atoms)
+## 2. Create or Update UI State (Jotai) and Query Options
 
-**Location:** `app/(app)/[page]/state.ts`
+Server state (lists, records, their loading/error/cache) lives in the **TanStack
+Query** cache — never in Jotai. This step covers the two things you DO author by
+hand: UI-state atoms and a read's query-options file.
 
-### When to Create/Update:
-- New page needs state management
-- New entities to track (e.g., list of items, loading states)
-- New UI state (e.g., modal open/closed, form states)
+### UI state — `app/[page]/state.ts`
 
-### Manual Implementation:
-State files are typically created manually as they require domain-specific knowledge. Create the state.ts file in the page directory (same level as page.tsx).
+Jotai atoms for **UI state only**: dialog/selection state, and the
+filter/sort/pagination inputs that feed query keys. No data or loading atoms.
 
-### Common Atom Patterns:
-- **Data atoms**: Store your entities (arrays or objects)
-- **Loading atoms**: Track async operation states
-- **UI atoms**: Modal/dialog visibility, form states
-- **Selection atoms**: Track selected items
-- **Filter/Search atoms**: Store filter criteria
-- **Derived atoms**: Computed state based on other atoms
+```typescript
+export const pageAtom = atom(1);
+export const searchAtom = atom('');
+export const dialogAtom = atom<'add' | 'edit' | null>(null);
+```
+
+### Query options — `app/[page]/behaviors/[name]/[name].query.ts`
+
+For each read, a `queryOptions` factory (shared `queryKey` + `queryFn` calling
+the Action) plus a key factory and a `defaultParams` export. The page Server
+Component prefetches it; the client hook consumes it. Export `defaultParams` and
+make the param atoms' initial values match it, or hydration silently misses.
+(See the **hooks** skill for the full pattern.)
 
 ## 3. Create or Update Actions
 
-**Location:** `app/(app)/[page]/behaviors/[behavior-name]/actions/[action-name].action.ts`
+**Location:** `app/[page]/behaviors/[behavior-name]/actions/[action-name].action.ts`
 
 ### Instructions:
 **Load the actions skill**
@@ -99,7 +104,7 @@ The actions skill documents all implementation details following the project's B
 ### Testing the Action:
 After creating the action, load the **unit-tests** skill to create an action test:
 
-**Test Location:** `app/(app)/[page]/behaviors/[behavior-name]/tests/[action-name].action.test.ts`
+**Test Location:** `app/[page]/behaviors/[behavior-name]/tests/[action-name].action.test.ts`
 
 Create a single test case using:
 - PreDB/PostDB patterns for database state verification
@@ -113,17 +118,18 @@ bun run test [action-name].action.test.ts
 
 ## 4. Create or Update Hooks
 
-**Location:** `app/(app)/[page]/behaviors/[behavior-name]/hooks/use-[behavior].ts`
+**Location:** `app/[page]/behaviors/[behavior-name]/hooks/use-[behavior].ts`
 
 ### Instructions:
 **Load the hooks skill**
 
 **Required Information:**
 - Behavior name and purpose
-- Which Jotai atoms from state.ts to use
-- Server action to call
-- Validation requirements
-- Optimistic update strategy
+- Read or write: `useQuery` (consumes the `[name].query.ts` options) or `useMutation`
+- Which UI-state atoms feed the query key (page/search/sort)
+- Server action to call as the `queryFn`/`mutationFn`
+- Validation requirements (validate once at the call site)
+- Optimistic update strategy (via the query cache, for list mutations)
 - Error handling needs
 
 The hooks skill documents all implementation details following the project's Frontend layer patterns.
@@ -131,13 +137,13 @@ The hooks skill documents all implementation details following the project's Fro
 ### Testing the Hook:
 After creating the hook, load the **unit-tests** skill to create a hook test:
 
-**Test Location:** `app/(app)/[page]/behaviors/[behavior-name]/tests/use-[behavior].test.tsx`
+**Test Location:** `app/[page]/behaviors/[behavior-name]/tests/use-[behavior].test.tsx`
 
 Create a single test case using:
+- A fresh `QueryClient` (with `retry: false`) wrapped in `QueryClientProvider`
 - Mocked server actions
-- HydrateAtoms pattern for Jotai state
-- Testing Library's renderHook
-- Verification of state updates and optimistic updates
+- Testing Library's `renderHook`
+- Verification of returned `data`/`error` and cache effects (optimistic + rollback)
 
 **Run the test:**
 ```bash
@@ -146,7 +152,7 @@ bun run test use-[behavior].test.tsx
 
 ## 5. Create or Update Components
 
-**Location:** `app/(app)/[page]/components/[ComponentName].tsx`
+**Location:** `app/[page]/components/[ComponentName].tsx`
 
 ### Instructions:
 **Load the components skill**
@@ -165,7 +171,7 @@ The components skill documents all implementation details following the project'
 
 After implementing all the components, create a comprehensive end-to-end test to verify the complete user workflow.
 
-**Location:** `app/(app)/[page]/behaviors/[behavior-name]/tests/[behavior-name].spec.ts`
+**Location:** `app/[page]/behaviors/[behavior-name]/tests/[behavior-name].spec.ts`
 
 ### Instructions:
 Load the **behavior-tests** skill to create a behavior test.
@@ -241,9 +247,9 @@ This shows the last 100 lines of logs to see what happened during the test.
 3. **Test with Real DB**: Use NODE_ENV=test database
 
 **For Hook Tests:**
-1. **Mock Actions**: Mock server actions, not Jotai state
-2. **Use HydrateAtoms**: Initialize state properly
-3. **Test State Changes**: Verify optimistic updates and rollbacks
+1. **Mock Actions**: Mock server actions (hooks don't touch the DB directly)
+2. **Wrap in QueryClientProvider**: Fresh `QueryClient` per test, `retry: false`
+3. **Test State Changes**: Verify returned data/error and optimistic updates + rollbacks via the cache
 
 ### Monitoring and Debugging:
 - **Run tests first**, then check logs with `tail logs/test.log` after completion
@@ -293,9 +299,9 @@ This behavior test step ensures your complete behavior works from UI to database
 ## File Organization Pattern
 
 ```
-app/(app)/[page]/
+app/[page]/
 ├── page.tsx                 # Next.js page component
-├── state.ts                 # Jotai atoms for page state
+├── state.ts                 # Jotai atoms (UI state only)
 ├── components/              # UI components
 │   ├── [List].tsx
 │   ├── [Card].tsx
@@ -326,9 +332,9 @@ Each test starts with a single test case following the "start small" principle.
 
 1. **Error Handling**: Always return `{ success, data?, error? }` format
 2. **Authentication**: Check `getUser()` in all protected actions
-3. **Validation**: Use Zod schemas for input validation
-4. **Optimistic Updates**: Update UI immediately, rollback on failure
-5. **Loading States**: Show visual feedback during async operations
+3. **Validation**: Use Zod schemas for input validation (once, at the hook's call site)
+4. **Optimistic Updates**: Via the query cache — `onMutate` snapshot, `onError` rollback, `onSettled` invalidate
+5. **Loading States**: Expose `isPending`/`isLoading` from the hook for UI feedback
 6. **Test IDs**: Add `data-testid` attributes for testing
 7. **TypeScript**: Use proper types for all data structures
 8. **File Naming**: Follow consistent naming conventions
