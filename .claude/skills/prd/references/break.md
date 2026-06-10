@@ -1,11 +1,6 @@
----
-name: break
-description: Break a PRD into individual implementation issues, one per behavior or feature, ordered and linked by the PRD's flows. Use when the user wants to turn a PRD into a set of issues. Triggers on "break the PRD into issues" or "break down the PRD".
----
+# Break PRD
 
-# Break
-
-Given the PRD the user provides (a file in `.epic/prds/`), break it into issues in `.epic/issues/`.
+Given the existing PRD the user references (a file in `.epic/prds/`), break it into issues in `.epic/issues/`. This mode does **not** edit the PRD body — it reads the PRD and produces issue files from it.
 
 - Break the PRD into issues. The number of issues should match the PRD: one per behavior or feature. Do not pad with extra issues, and do not invent requirements that are not in the PRD.
 - Each issue is just the title and a brief overview. The **build** skill turns each one into a full plan and implements it later.

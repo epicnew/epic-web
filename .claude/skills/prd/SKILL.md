@@ -1,47 +1,44 @@
 ---
 name: prd
-description: Create a Product Requirements Document (PRD) for a project or feature in .epic/prds, capturing the MVP pages, behaviors, and flows. Use when the user wants to spec out a new product or feature from a description. Triggers on "create a PRD", "write a PRD", or "spec out this product".
+description: Author and break down a Product Requirements Document (PRD) in .epic/prds, capturing the MVP pages, behaviors, and flows. Works in three modes — generate a brand-new PRD from a description, plan (fill in / refine) the body of an existing PRD in place, or break an existing PRD into implementation issues. Use when the user wants to spec out a new product or feature, flesh out a PRD, or turn a PRD into issues. Triggers on "create a PRD", "generate a PRD", "write a PRD", "plan this PRD", "break the PRD into issues", or "spec out this product".
 ---
 
 # PRD
 
-Given the product or feature description the user provides, write a complete Product Requirements Document.
+Author and break down a Product Requirements Document in `.epic/prds/`. This skill works in three modes. Pick the mode first, then follow its reference, using the shared concepts and format below for the modes that write the PRD body.
 
-## Creating the file
+This mirrors the `epic prd generate`, `epic prd plan`, and `epic prd break` CLI commands, merged into one skill.
 
-1. Determine the next PRD number `N` by checking existing files in `.epic/prds/` (named `PRD-[N]-[slug].md`). Use the next integer (start at 1 if the folder is empty).
-2. Create the file at `.epic/prds/PRD-[N]-[slug].md`, where `[slug]` is a short kebab-case title.
-3. Start the file with this front matter and heading, then write the body below it:
+## Choosing the mode
 
-```
----
-id: PRD-[N]
-status: draft
----
+- **generate** — there is no PRD yet. The user hands you a product or feature **description** and wants a new PRD created from scratch. You determine the next PRD number and create the file, then write its body. → Follow `references/generate.md`.
+- **plan** — a PRD file already exists and its body should be drafted or refined **in place**. → Follow `references/plan.md`.
+- **break** — a PRD file already exists and the user wants it turned into implementation **issues** in `.epic/issues/`. This mode reads the PRD and creates issue files; it does not edit the PRD body. → Follow `references/break.md`.
 
-# PRD-[N] [Title]
+Route by what the user asks for:
 
-[body goes here]
-```
+- "break the PRD" / "turn it into issues" / `prd break` → **break**.
+- A description with no existing PRD → **generate**.
+- An existing PRD to flesh out / refine → **plan**.
 
-Do not put anything above the `# PRD-[N] [Title]` heading except the front matter. Only write the body below the heading.
+If it is genuinely ambiguous, ask which one before starting.
 
-## Writing the body
+## Concepts (both modes)
 
-- Capture an MVP — only the most essential pages and behaviors. We will iterate later.
-- Think about what the core job to be done of this product is, and focus on it.
+- Capture an **MVP** — only the most essential pages and behaviors. Iterate later.
+- Focus on the product's core **job to be done**.
 - A **Behavior** is an action the user can take on a Page.
-- A **job story** is a design tool that focuses on the job a user is trying to accomplish rather than the user themselves. It emphasizes the context and situation surrounding the task, the motivation for the task, and the desired outcome:
+- A **job story** focuses on the job a user is trying to accomplish rather than the user themselves, emphasizing the context, motivation, and desired outcome:
 
-```
-When <situation>, I want to <motivation>, so I can <expected outcome>.
-```
+  ```
+  When <situation>, I want to <motivation>, so I can <expected outcome>.
+  ```
 
-- A **Flow** is a user workflow that connects behaviors across pages in order. Each step depends on the ones before it. Flows capture the implicit dependencies between behaviors. Capture them carefully — the **break** skill uses Flows to order issues and populate each issue's `depends_on` dependencies.
+- A **Flow** is a user workflow that connects behaviors across pages in order; each step depends on the ones before it. Flows capture the implicit dependencies between behaviors. Capture them carefully — the **break** mode uses Flows to order issues and populate each issue's `depends_on`.
 
-## Specification Format
+## Specification Format (both modes)
 
-Write the body using this exact structure:
+Write the PRD **body** using this exact structure (the front matter and `# PRD-N Title` heading sit above it and are handled by the mode reference):
 
 ```
 ## Overview
@@ -81,4 +78,10 @@ Write the body using this exact structure:
 2. [verb] [subject] -- another-page behavior
 ```
 
-Once the PRD is written, the **break** skill turns it into individual implementation issues.
+Keep it tight: every page earns its place by enabling at least one behavior in a flow; every behavior maps to a concrete user goal. Once the PRD is written, the **break** mode turns it into individual implementation issues.
+
+## References
+
+- `references/generate.md` — create a **new** PRD file from a description.
+- `references/plan.md` — draft or refine the body of an **existing** PRD in place.
+- `references/break.md` — break an **existing** PRD into implementation issues.
