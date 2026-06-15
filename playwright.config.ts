@@ -1,18 +1,29 @@
 import { defineConfig, devices } from '@playwright/test';
+import { execSync } from 'node:child_process';
 import dotenv from 'dotenv';
 
-// Load environment variables based on NODE_ENV
+// Load .env, then overlay .env.test. `.env.test` no longer sets DATABASE_URL
+// (unit tests use :memory:; see vitest.env.ts) — it carries only the transient
+// BASE_URL that `epic preview start` injects so spec can reuse a running preview.
 dotenv.config({ path: '.env', quiet: true });
-if (process.env.NODE_ENV === 'test') {
-  dotenv.config({ path: '.env.test', override: true, quiet: true });
-} else if (process.env.NODE_ENV === 'production') {
-  dotenv.config({ path: '.env.production', override: true, quiet: true });
-}
+dotenv.config({ path: '.env.test', override: true, quiet: true });
 
-// BASE_URL wins (supplied by `epic preview start`).
-// Fall back to 3001 for local test runs, 8080 for dev.
-const baseURL = process.env.BASE_URL ||
-  (process.env.NODE_ENV === 'test' ? 'http://localhost:3001' : 'http://localhost:8080');
+// Spec runs against the PREVIEW (the normal dev server on development.db), never
+// a separate test DB:
+//   - BASE_URL set  → reuse the already-running preview (epic preview start).
+//   - BASE_URL unset → start one ourselves via the `preview` script on a fresh
+//     free port (mirrors what epic does), so there is no fixed port to collide.
+const freePort = (): number =>
+  Number(
+    execSync(
+      `node -e "const s=require('net').createServer();s.listen(0,()=>{process.stdout.write(String(s.address().port));s.close()})"`,
+    )
+      .toString()
+      .trim(),
+  );
+
+const port = process.env.BASE_URL ? undefined : freePort();
+const baseURL = process.env.BASE_URL || `http://localhost:${port}`;
 
 export default defineConfig({
   testMatch: '**/*.spec.ts',
@@ -46,14 +57,13 @@ export default defineConfig({
   ],
 
   // When BASE_URL is set the preview is already running — skip launching a server.
+  // Otherwise start the SAME `preview` script epic uses (next dev → development.db)
+  // on the free port chosen above. The port is freshly allocated, so nothing is
+  // there to reuse — fail fast if it's somehow taken.
   webServer: process.env.BASE_URL ? undefined : {
-    command: 'rm -f .next/dev/lock && NODE_ENV=test NEXT_BUILD_ID=test next dev -p 3001 --turbopack',
+    command: `rm -f .next/dev/lock && bun run preview ${port}`,
     url: baseURL,
     reuseExistingServer: false,
     timeout: 120000,
-    env: {
-      NODE_ENV: 'test',
-      NEXT_BUILD_ID: 'test',
-    },
   },
 });

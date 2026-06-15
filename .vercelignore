@@ -9,7 +9,6 @@ coverage/
 
 # Database files (development only)
 db/databases/development.db
-db/databases/test.db
 
 # Environment files (should be set in Vercel dashboard)
 .env.local
