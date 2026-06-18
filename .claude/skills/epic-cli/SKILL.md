@@ -35,20 +35,22 @@ background instead of attaching a viewer).
 | Command | Description |
 |---------|-------------|
 | `epic project new [name] [--web\|--terminal\|--empty] [--codex\|--opencode]` | Create a project + GitHub repo from a template |
-| `epic project plan` | Interview with the agent to draft/refine the project spec (resumes a prior session) |
-| `epic project build [--mode auto\|manual] [--clean]` | Build all issues, walking the dependency graph; detaches an orchestrator and attaches a viewer |
+| `epic project build [--mode auto\|manual] [--clean]` | Build all issues, walking the dependency graph; detaches an orchestrator and attaches a viewer. `manual` (default) stops each issue at "In Review"; `auto` self-merges to main |
 
 ## PRD (product requirements)
 
 | Command | Description |
 |---------|-------------|
 | `epic prd new [title]` | Create a blank PRD in `.epic/prds/` |
-| `epic prd generate [description]` | AI-generate a PRD from a description |
-| `epic prd list [--status draft\|active\|archived]` | List PRDs |
+| `epic prd generate [description] [-b]` | AI-generate a PRD from a description |
+| `epic prd list [--status draft\|ready\|building\|in_review\|done\|archived] [--refresh]` | List PRDs |
 | `epic prd plan <PRD-id\|path>` | Fill the PRD body with a structured spec |
 | `epic prd interview <PRD-id\|path>` | Interview the user and rewrite the PRD body in place |
 | `epic prd attach <PRD-id\|path>` | Attach to / resume the PRD's agent session |
-| `epic prd break <PRD-id\|path>` | Break a PRD into issues in `.epic/issues/` |
+| `epic prd break <PRD-id\|path> [-b]` | Break a PRD into issues in `.epic/issues/` |
+| `epic prd build <PRD-id\|path> [-b] [--mode auto\|manual]` | Build the PRD's issues, stacking them onto a `prd-<n>` branch. `manual` (default) stops each issue at "In Review" for `epic issue approve`; `auto` self-merges each |
+| `epic prd approve <PRD-id\|path> [--squash]` | Merge the in-review PRD's integration PR and set its status to `done` |
+| `epic prd sessions` | List active PRD agent sessions for this repo |
 
 ## Issue
 
@@ -80,14 +82,17 @@ Agent-driven lifecycle (each takes `--provider`, most take `-b`):
 | `epic issue merge <id>` | Agent-driven merge of the worktree branch into main |
 | `epic issue approve <id>` | Approve an In-Review issue: agent-merge into main, mark Done |
 | `epic issue attach\|stop <id>` | Attach to / stop a running session |
+| `epic issue message <id> "<text>" [-b]` | Send a message to the issue's running agent (resumes the session) |
+| `epic issue sessions` | List active tmux-backed agent sessions for this repo |
 
 ## Design
 
 | Command | Description |
 |---------|-------------|
 | `epic design new [title] [--force]` | Create a blank `DESIGN.md` scaffold at the project root |
-| `epic design generate [description]` | AI-generate `DESIGN.md` from a description |
-| `epic design apply` | Apply `DESIGN.md` to the project via an agent |
+| `epic design generate [description] [-b]` | AI-generate `DESIGN.md` from a description |
+| `epic design apply [-b]` | Apply `DESIGN.md` to the project via an agent |
+| `epic design attach` / `epic design stop` | Attach to / end the project's design agent session |
 
 ## Prototype
 
@@ -114,8 +119,11 @@ Agent-driven lifecycle (each takes `--provider`, most take `-b`):
 
 ## Other
 
+- `epic` (no args) opens a live PRD dashboard; `epic menu` opens the categorized command menu.
+- `epic debugger on\|off` — toggle Epic's line-by-line debugger (Variables Snapshot) by editing `.env`; usually triggers a server restart.
 - `epic stage assign --stage "In Review" --user alice` — auto-assign a user when an issue reaches a stage.
-- `epic login [name] [--url]`, `epic logout`, `epic whoami`, `epic profile` — authentication and saved credential profiles.
+- `epic login [name] [--url]`, `epic logout`, `epic whoami`, `epic profile` — authentication and saved credential profiles. Add `--as <profile>` to any command to run it under a specific profile once.
+- Marketplace (hand issues to freelancers): `epic request`, `epic proposal`, `epic contract`, `epic payouts`, `epic admin`. Run `epic <cmd> --help` for each.
 
 ## Common Workflows
 

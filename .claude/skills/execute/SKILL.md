@@ -19,7 +19,7 @@ This build process leverages a dedicated skill for each layer of the architectur
 | **routes** | API routes and server-side route handlers (streaming, webhooks) | Backend |
 | **hooks** | Client hooks with state management and optimistic updates | Frontend |
 | **components** | UI components that consume hooks | Frontend |
-| **unit-tests** / **behavior-tests** | Action/hook tests (.test.ts) and E2E behavior tests (.spec.ts) | Testing |
+| **test** | Action/hook tests (.test.ts, see `references/unit.md`) and E2E behavior tests (.spec.ts, see `references/behavior.md`) | Testing |
 
 Each skill documents the project's three-layer architecture patterns for its layer, ensuring consistency, proper debug logging, and error handling. Load the relevant skill at each step.
 
@@ -102,7 +102,7 @@ make the param atoms' initial values match it, or hydration silently misses.
 The actions skill documents all implementation details following the project's Backend layer patterns, calling models for data operations.
 
 ### Testing the Action:
-After creating the action, load the **unit-tests** skill to create an action test:
+After creating the action, load the **test** skill (use `references/unit.md`) to create an action test:
 
 **Test Location:** `app/[page]/behaviors/[behavior-name]/tests/[action-name].action.test.ts`
 
@@ -135,7 +135,7 @@ bun run test [action-name].action.test.ts
 The hooks skill documents all implementation details following the project's Frontend layer patterns.
 
 ### Testing the Hook:
-After creating the hook, load the **unit-tests** skill to create a hook test:
+After creating the hook, load the **test** skill (use `references/unit.md`) to create a hook test:
 
 **Test Location:** `app/[page]/behaviors/[behavior-name]/tests/use-[behavior].test.tsx`
 
@@ -174,7 +174,7 @@ After implementing all the components, create a comprehensive end-to-end test to
 **Location:** `app/[page]/behaviors/[behavior-name]/tests/[behavior-name].spec.ts`
 
 ### Instructions:
-Load the **behavior-tests** skill to create a behavior test.
+Load the **test** skill (use `references/behavior.md`) to create a behavior test.
 
 **Required Information:**
 - Behavior name and expected workflow
@@ -320,7 +320,7 @@ app/[page]/
 
 ## Testing Summary
 
-Tests are created alongside each implementation step using the unit-tests and behavior-tests skills:
+Tests are created alongside each implementation step using the **test** skill (`references/unit.md` for action/hook tests, `references/behavior.md` for behavior tests):
 
 1. **After creating actions** → Write action tests (.action.test.ts)
 2. **After creating hooks** → Write hook tests (.test.tsx)

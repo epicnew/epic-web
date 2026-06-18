@@ -1,23 +1,41 @@
-# Functional Specification Reference
+# Unit Tests
 
-This document provides detailed examples of the functional specification format used to generate unit tests with the PreDB/PostDB pattern.
+Convert functional specifications into executable test code (`.test.ts`). Tests define the behavioral contract that the implementation must satisfy, following Test-Driven Development principles.
 
-## Specification Format
+## When to Use
 
-Functional specifications follow this three-part structure:
+- A spec is written with PreDB / Workflow / PostDB structure
+- You are testing actions, hooks, or models at the function/method level
+- Starting a TDD workflow (tests first, implementation later)
 
-### 1. PreDB
-Define the initial state of the database before the test runs. Uses a CSV-like format where the first line is column headers and subsequent lines are data rows.
+## Functional Specification Format
 
-### 2. Workflow
-A bullet-point list describing the sequence of actions and expected behavior. The first bullet typically indicates the public method being tested.
+Specs follow a three-part structure for each scenario:
 
-### 3. PostDB
-Define the expected state of the database after the test runs. Includes both pre-existing rows and new rows created during the test.
+**PreDB**: Initial database state (CSV-like format)
+```
+table_name:
+column1, column2, column3
+value1, value2, value3
+```
+
+**Workflow**: Bullet points describing the sequence of actions
+```
+* Call `class.method(args)`
+* [What happens internally]
+* Returns [object type]
+```
+
+**PostDB**: Expected database state after execution (includes pre-existing + new rows)
+```
+table_name:
+column1, column2, column3, column4
+value1, value2, value3, newvalue
+```
+
+Use placeholders for runtime-generated values: `<uuid>`, `<timestamp>`, `<vector>`, `<1536-dim vector>`
 
 ## Placeholder Values
-
-Use these placeholders for runtime-generated values:
 
 - `<uuid>` - Auto-generated unique identifier
 - `<timestamp>` - Auto-generated timestamp
@@ -26,9 +44,115 @@ Use these placeholders for runtime-generated values:
 - `<1536-dim vector>` - Explicit dimension specification
 - `<3072-dim vector>` - Different dimension specification
 
-## Complete Examples
+## Test Generation Workflow
 
-### Example 1: Empty Database (Seed Case)
+### 1. Parse the Specification
+
+For each scenario in the spec:
+- Extract test name from scenario title (convert to "should [action] when [condition]" format)
+- Identify all tables and their initial states from PreDB
+- Extract the method call from the first Workflow bullet
+- Identify expected return values and database state from PostDB
+
+### 2. Generate Test File Structure
+
+Create test file at `[module]/tests/[class-name].test.ts`:
+
+```typescript
+import { describe, it, expect, beforeEach } from 'vitest';
+import { PreDB, PostDB } from '@/lib/db-test';
+import { db } from '@/db';
+import * as schema from '@/db/schema';
+import { ClassName } from '@/path/to/class';
+
+describe('ClassName', () => {
+  let instance: ClassName;
+
+  beforeEach(() => {
+    instance = new ClassName(db);
+  });
+
+  const TEST_TIMEOUT = 120000; // For API calls
+
+  it('[test name]', async () => {
+    // PreDB: Setup
+    await PreDB(db, schema, { /* ... */ });
+
+    // Execute
+    const result = await instance.method();
+
+    // Assertions
+    expect(result.field).toBe(expectedValue);
+
+    // PostDB: Verify
+    await PostDB(db, schema, { /* ... */ }, { allowExtraRows: true });
+  }, TEST_TIMEOUT);
+});
+```
+
+### 3. Translation Rules
+
+**PreDB → PreDB**:
+- Empty tables: `table: []`
+- With data: Map CSV rows to objects with proper types
+- Timestamps: Use `const now = new Date()`
+- Vectors: Use `new Array(1536).fill(0.1)` for test data
+
+**Workflow → Execution**:
+- First bullet indicates the public method to call
+- Only call the public method, not internal implementation details
+- Add comment describing what the method does conceptually
+
+**PostDB → Assertions + PostDB**:
+- Derive assertions from expected values (types, ranges, specific values)
+- Use `allowExtraRows: true` when pre-existing rows exist
+- Only verify the new/changed data, reference actual result values
+
+### 4. Complete All Scenarios
+
+Generate one `it()` block per scenario in the specification. Include all scenarios to ensure comprehensive test coverage.
+
+### 5. Report to User
+
+Show the generated test file and explain:
+- Tests will fail initially (no implementation yet)
+- Tests define the contract for what needs to be implemented
+- Tests document expected behavior
+
+## Key Principles
+
+**TDD Philosophy**:
+- Tests are written BEFORE implementation exists
+- Expected outcome: tests fail initially (red), then implementation makes them pass (green)
+- Tests define the contract, not validate existing code
+
+**Testing Approach**:
+- Test behavior (what happens), not implementation (how it works)
+- Use real database operations and real API calls (no mocks)
+- Make tests readable with clear sections (PreDB, Execute, Verify)
+- Use descriptive test names
+
+**Avoid**:
+- Mocks, spies, or stubs
+- Testing private methods or internal state
+- `.toHaveBeenCalledWith()` assertions
+- Hardcoding generated values like UUIDs in assertions
+
+## Required Context
+
+Before generating tests, ensure access to:
+1. The functional specification (PreDB/Workflow/PostDB)
+2. The class/module name and import path
+3. The database schema location (`db/schema.ts`)
+4. Knowledge of which tables are involved
+
+If any are missing, ask the user for clarification before proceeding.
+
+---
+
+# Complete Examples
+
+## Example 1: Empty Database (Seed Case)
 
 ```markdown
 ## Create new idea with empty archive
@@ -56,7 +180,7 @@ id, description, embedding, status, createdAt
 - Status defaults to 'pending'
 - Placeholders indicate values generated at runtime
 
-### Example 2: Single Pre-existing Row
+## Example 2: Single Pre-existing Row
 
 ```markdown
 ## Create new idea with successful products in archive
@@ -91,7 +215,7 @@ idea-3, "Collaborative kanban board", <vector-3>, pending, <timestamp-3>
 - PostDB include both pre-existing AND new rows
 - New row gets a new placeholder ID (idea-3)
 
-### Example 3: Filtering by Status
+## Example 3: Filtering by Status
 
 ```markdown
 ## Create new idea with failed products in archive
@@ -122,7 +246,7 @@ idea-2, "Simple note-taking app", <vector-2>, pending, <timestamp-2>
 - Workflow describes the business logic (avoiding complexity)
 - New idea has status='pending' (different from pre-existing)
 
-### Example 4: Mixed Data Scenario
+## Example 4: Mixed Data Scenario
 
 ```markdown
 ## Create new idea with both successful and failed products
@@ -159,9 +283,7 @@ idea-3, "Todo app with real-time sync", <vector-3>, pending, <timestamp-3>
 - Explicitly states vector dimensions in Workflow (1536)
 - Generated test name would be: "should create new idea with both successful and failed products"
 
-## Multiple Table Examples
-
-### Example 5: Foreign Key Relationships
+## Example 5: Foreign Key Relationships
 
 ```markdown
 ## Create specification from idea
@@ -198,7 +320,7 @@ id, ideaId, content, createdAt
 - Empty tables use `(empty table)` notation
 - PostDB show state of ALL relevant tables
 
-### Example 6: Cascade Updates
+## Example 6: Cascade Updates
 
 ```markdown
 ## Update product status after completion
@@ -233,9 +355,9 @@ prod-1, idea-1, complete, <timestamp-2>
 - Notice status changes in both idea and product
 - Demonstrates business logic that spans multiple tables
 
-## Translation to Tests
+# Translation to Tests
 
-### PreDB � PreDB
+## PreDB → PreDB
 
 ```typescript
 // Empty table
@@ -268,7 +390,7 @@ await PreDB(db, schema, {
 });
 ```
 
-### Workflow � Test Execution
+## Workflow → Test Execution
 
 ```typescript
 // From: Call `dreamer.create()`
@@ -278,7 +400,7 @@ const result = await dreamer.create();
 const result = await judge.createSpec('idea-1');
 ```
 
-### PostDB � Assertions + PostDB
+## PostDB → Assertions + PostDB
 
 ```typescript
 // Assertions based on expected values
@@ -300,9 +422,9 @@ await PostDB(db, schema, {
 }, { allowExtraRows: true });
 ```
 
-## Common Patterns
+# Common Patterns
 
-### Pattern 1: Testing with No Pre-existing Data
+## Pattern 1: Testing with No Pre-existing Data
 
 ```markdown
 ### PreDB
@@ -317,7 +439,7 @@ await PreDB(db, schema, {
 });
 ```
 
-### Pattern 2: Using Multiple Distinct Placeholders
+## Pattern 2: Using Multiple Distinct Placeholders
 
 ```markdown
 ### PreDB
@@ -340,7 +462,7 @@ await PreDB(db, schema, {
 
 **Note:** Use different fill values for distinct vectors (0.1 vs 0.2) but same timestamp constant is acceptable for test data.
 
-### Pattern 3: Quoted String Values
+## Pattern 3: Quoted String Values
 
 When values contain spaces or special characters, use quotes:
 
@@ -355,7 +477,7 @@ Maps to:
 { id: 'idea-1', description: 'Todo list with real-time collaboration' }
 ```
 
-### Pattern 4: Enum Values
+## Pattern 4: Enum Values
 
 ```markdown
 idea:
@@ -374,9 +496,9 @@ Maps to:
 
 **Note:** No quotes in spec, but translated to string literals in code.
 
-## Best Practices
+# Best Practices
 
-### DO:
+## DO:
 - Use descriptive scenario names that explain the test case
 - Keep workflows focused on behavior, not implementation
 - Use placeholders for runtime-generated values
@@ -384,14 +506,14 @@ Maps to:
 - Use hardcoded IDs for test data (idea-1, spec-1, etc.)
 - Use `(empty table)` notation for tables with no data
 
-### DON'T:
+## DON'T:
 - Include implementation details in Workflow (focus on what happens, not how)
 - Use actual UUIDs or timestamps in specs (use placeholders)
 - Omit pre-existing rows from PostDB (show complete state)
 - Mix concerns - each scenario should test one logical case
 - Add unnecessary complexity - keep specs simple and focused
 
-## Spec Writing Checklist
+# Spec Writing Checklist
 
 When writing a new functional specification:
 
@@ -406,17 +528,17 @@ When writing a new functional specification:
 - [ ] Enum values match schema definitions
 - [ ] Foreign key relationships are correctly specified
 
-## Example Scenario Names
+# Example Scenario Names
 
 Good scenario names that translate to clear test names:
 
-- "Create new idea with empty archive" � "should create new idea when archive is empty"
-- "Create new idea with successful products" � "should create new idea with successful products in archive"
-- "Update product status after completion" � "should update product status after completion"
-- "Generate spec from idea" � "should generate spec from idea"
-- "Reject invalid input" � "should reject invalid input"
+- "Create new idea with empty archive" → "should create new idea when archive is empty"
+- "Create new idea with successful products" → "should create new idea with successful products in archive"
+- "Update product status after completion" → "should update product status after completion"
+- "Generate spec from idea" → "should generate spec from idea"
+- "Reject invalid input" → "should reject invalid input"
 
-## Notes
+# Notes
 
 - Specs are written BEFORE implementation (TDD approach)
 - Tests generated from specs will fail until implementation exists

@@ -1,129 +1,154 @@
 ---
 name: epic-cli
-description: Use the Epic CLI for project management, issue tracking, agent orchestration, and spec generation. Triggers on requests like "create a project", "start an issue", "start an agent", "generate a spec", or "break spec into issues".
+description: Use the Epic CLI for project and issue management, PRD-driven specs, the AI agent-driven issue lifecycle (plan/execute/verify/review/merge), design tokens, and UI prototypes. Triggers on requests like "create a project", "generate a PRD", "break a PRD into issues", "plan/build an issue", "review/merge an issue", or "apply the design".
 ---
 
 # Epic CLI
 
 ## Overview
 
-Epic CLI is a project and issue management tool that integrates with GitHub. It handles project creation, issue tracking with markdown files, AI agent orchestration, spec generation, and design token application.
+Epic CLI manages projects and issues backed by Markdown files and GitHub. It drives a
+PRD → issues → implementation workflow where each issue is taken through an AI agent
+lifecycle (plan, execute, verify, fix, review, merge). It also handles DESIGN.md,
+UI prototypes, per-issue preview servers, and git worktrees.
 
-## Commands
+Run any command with no args or `--help` for subcommands: `epic <command> --help`.
 
-### Project Management
+## Storage & settings
 
-Create new projects with GitHub repository:
+`.epic/settings.json` configures where things live:
 
-```bash
-epic project new my-awesome-project
-epic project new org/repo-name
-epic project new my-web-app --web    # Use web template
-epic project new                     # Interactive mode
+```json
+{ "baseDirectory": ".epic", "issuesDirectory": "issues", "draftsDirectory": "drafts", "type": "web" }
 ```
 
-### Issue Management
+- **PRDs**: `.epic/prds/` as `PRD-[N]-[slug].md`
+- **Issues**: `.epic/issues/` as `{prefix}-{number}-{slug}.md`
+
+Issue IDs accept a Markdown path, an issue number, or `prefix-number` (e.g. `CLI-8`).
+
+Many agent commands accept `--provider claude|codex|opencode` and `-b` (detach: run in
+background instead of attaching a viewer).
+
+## Project
 
 | Command | Description |
 |---------|-------------|
-| `epic issue new "Title"` | Create new issue with title |
-| `epic issue new` | Create new issue interactively |
-| `epic issue new --no-sync` | Create local issue without GitHub sync |
-| `epic issue list` | List all issues |
-| `epic issue list open` | List open issues |
-| `epic issue list closed` | List closed issues |
+| `epic project new [name] [--web\|--terminal\|--empty] [--codex\|--opencode]` | Create a project + GitHub repo from a template |
+| `epic project build [--mode auto\|manual] [--clean]` | Build all issues, walking the dependency graph; detaches an orchestrator and attaches a viewer. `manual` (default) stops each issue at "In Review"; `auto` self-merges to main |
+
+## PRD (product requirements)
+
+| Command | Description |
+|---------|-------------|
+| `epic prd new [title]` | Create a blank PRD in `.epic/prds/` |
+| `epic prd generate [description] [-b]` | AI-generate a PRD from a description |
+| `epic prd list [--status draft\|ready\|building\|in_review\|done\|archived] [--refresh]` | List PRDs |
+| `epic prd plan <PRD-id\|path>` | Fill the PRD body with a structured spec |
+| `epic prd interview <PRD-id\|path>` | Interview the user and rewrite the PRD body in place |
+| `epic prd attach <PRD-id\|path>` | Attach to / resume the PRD's agent session |
+| `epic prd break <PRD-id\|path> [-b]` | Break a PRD into issues in `.epic/issues/` |
+| `epic prd build <PRD-id\|path> [-b] [--mode auto\|manual]` | Build the PRD's issues, stacking them onto a `prd-<n>` branch. `manual` (default) stops each issue at "In Review" for `epic issue approve`; `auto` self-merges each |
+| `epic prd approve <PRD-id\|path> [--squash]` | Merge the in-review PRD's integration PR and set its status to `done` |
+| `epic prd sessions` | List active PRD agent sessions for this repo |
+
+## Issue
+
+Creation, sync, and housekeeping:
+
+| Command | Description |
+|---------|-------------|
+| `epic issue new [title] [--no-sync]` | Create an issue (syncs to GitHub unless `--no-sync`) |
+| `epic issue list [open\|closed]` | List issues |
 | `epic issue show <id>` | Show issue details |
 | `epic issue get <id>` | Download issue from GitHub |
-| `epic issue sync push <id>` | Push local changes to GitHub |
-| `epic issue sync pull <id>` | Pull GitHub changes to local |
-| `epic issue start <id>` | Start working (creates worktree + tmux + claude) |
-| `epic issue start <id> --no-switch` | Create session but don't switch to it |
-| `epic issue start <id> --no-tmux` | Create worktree only (no tmux) |
-| `epic issue start <id> --branch` | Create branch only (no worktree) |
-| `epic issue assign <id> <user>` | Assign issue to user |
-| `epic issue close <id>` | Close issue and cleanup |
+| `epic issue sync push\|pull <id>` | Push/pull changes to/from GitHub |
+| `epic issue assign <id> <user>` | Assign issue |
+| `epic issue close <id>` | Close issue and clean up |
+| `epic issue worktree <id>` | Create just a worktree (no tmux/agent) |
 
-Issue IDs can be: markdown file path, issue number, or prefix-number (e.g., `CLI-8`).
-
-### Agent Management
-
-Orchestrate AI agents that work on issues autonomously:
+Agent-driven lifecycle (each takes `--provider`, most take `-b`):
 
 | Command | Description |
 |---------|-------------|
-| `epic agent start <input>` | Start agent from issue file or prompt |
-| `epic agent list` | List all active agents |
-| `epic agent send <id> <message>` | Send message to running agent |
-| `epic agent pause <id>` | Pause agent (interrupt generation) |
-| `epic agent cancel <id>` | Cancel agent (full cleanup) |
-| `epic agent switch <id>` | Switch to agent's tmux session |
+| `epic issue plan <id>` | Update the issue with an implementation plan |
+| `epic issue execute <id>` | Implement the plan (resumes the plan's session) |
+| `epic issue build <id> [--mode auto\|manual]` | Full loop: plan + execute + verify-fix. `manual` (default) leaves the issue "In Review" with the worktree kept |
+| `epic issue verify <id> [-p PORT]` | Verify the issue in a browser via playwright |
+| `epic issue fix <id>` | Fix failing scenarios from a prior verify |
+| `epic issue interview <id>` | Interview the user and rewrite the issue in place |
+| `epic issue review <id>` | Review the worktree diff vs main; write a `# Review` section |
+| `epic issue pr <id>` | Push the branch and open/surface its GitHub PR |
+| `epic issue merge <id>` | Agent-driven merge of the worktree branch into main |
+| `epic issue approve <id>` | Approve an In-Review issue: agent-merge into main, mark Done |
+| `epic issue attach\|stop <id>` | Attach to / stop a running session |
+| `epic issue message <id> "<text>" [-b]` | Send a message to the issue's running agent (resumes the session) |
+| `epic issue sessions` | List active tmux-backed agent sessions for this repo |
 
-Starting an agent with a prompt auto-creates an issue:
+## Design
 
-```bash
-epic agent start docs/issues/cli-8.md       # Start with existing issue
-epic agent start "implement dark mode"      # Start with prompt (creates issue)
-epic agent start cli-8.md --no-tmux         # Skip tmux session
-epic agent start cli-8.md --no-switch       # Don't switch to tmux after creation
-```
+| Command | Description |
+|---------|-------------|
+| `epic design new [title] [--force]` | Create a blank `DESIGN.md` scaffold at the project root |
+| `epic design generate [description] [-b]` | AI-generate `DESIGN.md` from a description |
+| `epic design apply [-b]` | Apply `DESIGN.md` to the project via an agent |
+| `epic design attach` / `epic design stop` | Attach to / end the project's design agent session |
 
-### Spec Generation
+## Prototype
 
-Generate project specs and break them into individual issues:
+| Command | Description |
+|---------|-------------|
+| `epic prototype new "<description>" [--web\|--terminal]` | Scaffold a numbered prototype folder + `prompt.md`; the agent writes `page.tsx` (web) or `screen.tsx` (terminal) |
+| `epic prototype list` | List prototypes; Enter resumes a prototype's agent session |
 
-```bash
-epic spec generate "A CLI tool for managing deployments"   # Generate spec from description
-epic spec generate                                         # Interactive mode
-epic spec break                                            # Break spec.md into issues
-epic spec break ./docs/spec.md                             # Break custom spec file
-```
+## Preview (per-issue dev server)
 
-### Style Application
+| Command | Description |
+|---------|-------------|
+| `epic preview start\|stop\|url\|list <id>` | Start/stop/inspect a dev server running in an issue's worktree |
 
-Apply tweakcn design tokens to the project's globals.css:
+## Worktrees
 
-```bash
-epic style apply                      # Prompts for CSS input
-epic style apply "paste css here"     # Applies provided CSS tokens
-```
+| Command | Description |
+|---------|-------------|
+| `epic wt list [--paths]` | List git worktrees |
+| `epic wt new <branch> [path]` | Create a worktree and print its path |
+| `epic wt path <branch>` | Print a branch's worktree path |
+| `epic wt switch <branch> [-c] [-x cmd -- args]` | Print/enter a worktree path, optionally run a command in it |
+| `epic wt prune` / `epic wt remove [branch]` | Clean up stale refs / remove a worktree + branch |
 
-## Issue File Format
+## Other
 
-Issues are stored in `docs/issues/` with pattern `{prefix}-{number}-{slug}.md`. Contains:
-- Title and GitHub issue number (if synced)
-- Status
-- Description
-- Functional and Technical specifications
-- Task checklist
+- `epic` (no args) opens a live PRD dashboard; `epic menu` opens the categorized command menu.
+- `epic debugger on\|off` — toggle Epic's line-by-line debugger (Variables Snapshot) by editing `.env`; usually triggers a server restart.
+- `epic stage assign --stage "In Review" --user alice` — auto-assign a user when an issue reaches a stage.
+- `epic login [name] [--url]`, `epic logout`, `epic whoami`, `epic profile` — authentication and saved credential profiles. Add `--as <profile>` to any command to run it under a specific profile once.
+- Marketplace (hand issues to freelancers): `epic request`, `epic proposal`, `epic contract`, `epic payouts`, `epic admin`. Run `epic <cmd> --help` for each.
 
 ## Common Workflows
 
-**Full issue lifecycle:**
+**PRD-driven build:**
 ```bash
-epic issue new "Add dark mode support"    # Create + sync to GitHub
-epic issue start CLI-8                    # Worktree + tmux + claude
-epic issue sync push CLI-8               # Push local changes
-epic issue close CLI-8                    # Close + cleanup
+epic prd generate "E-commerce platform"   # AI-draft a PRD in .epic/prds/
+epic prd break PRD-1                       # Create issue files in .epic/issues/
+epic project build                         # Build all issues by dependency order
 ```
 
-**Delegate work to an agent:**
+**Single issue, end to end:**
 ```bash
-epic agent start docs/issues/cli-8.md    # Agent works on existing issue
-epic agent list                          # Check progress
-epic agent send cli-8 "fix the tests"   # Give agent feedback
-epic agent cancel cli-8                  # Stop if needed
+epic issue new "Add dark mode support"     # Create + sync to GitHub
+epic issue build CLI-8                      # plan + execute + verify-fix loop
+epic issue review CLI-8                     # Write a review of the diff
+epic issue approve CLI-8                    # Merge into main and mark Done
 ```
 
-**Spec-driven development:**
+**Prototype an idea:**
 ```bash
-epic spec generate "E-commerce platform"  # Generate spec.md
-# Review and edit spec.md
-epic spec break                           # Creates individual issue files
-epic agent start docs/issues/ecom-1.md    # Start agents on each issue
+epic prototype new "Login page with email and password" --web
 ```
 
-**Review open issues:**
+**Design system:**
 ```bash
-epic issue list open
-epic issue show CLI-8
+epic design generate "dark fintech dashboard, minimal, Inter font, blue accent"
+epic design apply
 ```

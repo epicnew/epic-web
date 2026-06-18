@@ -465,8 +465,8 @@ Check:
 
 ## Usage with Other Skills
 
-**unit-tests skill:**
-Examples can be directly used with the unit-tests skill to generate behavioral tests. The PreDB/Steps/PostDB format maps to PreDB/Execute/PostDB pattern.
+**test skill:**
+Examples can be directly used with the **test** skill to generate behavioral tests. The PreDB/Steps/PostDB format maps to the PreDB/Execute/PostDB pattern (see `references/unit.md` for unit tests, `references/behavior.md` for behavior tests).
 
 ## Reference
 
