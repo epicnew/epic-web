@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Verify that an implemented issue works by exercising its behavior in a real browser with agent-browser, checking every rule and scenario from the issue's specification. Use after implementing an issue, or when the user asks to verify/confirm a behavior works. Triggers on "verify this issue", "verify the behavior", or "check the issue works".
+description: Verify that an implemented issue works by exercising its behavior in a real browser with agent-browser, checking every scenario from the issue's specification. Use after implementing an issue, or when the user asks to verify/confirm a behavior works. Triggers on "verify this issue", "verify the behavior", or "check the issue works".
 ---
 
 # Verify
@@ -13,16 +13,16 @@ Use `npx agent-browser` to drive the browser (fetched on demand — no install n
 
 1. Read the issue file the user provides. Locate its `# Functional Specification` section.
 2. Inside it, find the `## Behavior: <name>` block. Treat that block as the source of truth for what to verify.
-3. Enumerate **every scenario** you need to verify:
-   - **Each `#### <rule-name>` under `### Rules`** — a rule is a declarative `When:` / `Then:` constraint. Treat it as one verifiable scenario: set up the When conditions, then check that the Then outcomes hold.
-   - **Each `#### <scenario-name>` under `### Scenarios`** — a worked walkthrough with optional `#### PreDB`, required `#### Steps` (using `Act:` / `Check:` keywords), and optional `#### PostDB`. Follow the Steps in order.
+3. Enumerate **every scenario under `### Scenarios`**. Each `#### <scenario-name>` is one verifiable scenario — a worked walkthrough with optional `#### PreDB`, required `#### Steps` (using `Act:` / `Check:` keywords), and optional `#### PostDB`. Follow the Steps in order.
+
+   The `### Rules` block is **not** verified independently. Rules are declarative `When:` / `Then:` context that tells you what a scenario's `Check:` assertions mean — do **not** emit a PASS/FAIL line for a rule. Every line in the report corresponds to a Scenario.
 4. Open the browser and navigate to the application.
 5. For each scenario, in order:
    - **Assign a distinct test user to the scenario** (see [Test Users](#test-users)). For the Nth scenario, use `userSeeds[(N - 1) % userSeeds.length]`. Using a different user per scenario keeps the scenarios isolated so data created by one doesn't bleed into the next.
    - **If the scenario requires an authenticated user, sign in as that assigned test user first** (via the app's signin page) before driving its steps. Skip this only when the scenario is itself an unauthenticated flow (e.g. signin/signup, public landing pages), in which case use the credentials directly as the scenario dictates.
-   - If the scenario has `#### PreDB`, treat it as the assumed starting state — note any preconditions you can verify but don't try to mutate the database yourself.
-   - Drive the UI per the rule's `When:` conditions or the scenario's `Act:` steps. Use `snapshot` to see the page; use the `@e…` refs it prints to `click`, `fill`, `type`, etc.
-   - Confirm the rule's `Then:` outcomes or the scenario's `Check:` assertions match what's actually on screen / in network responses.
+   - If the scenario has `#### PreDB`, **set the database into that state before driving the Steps** (see [Setting up scenario state](#setting-up-scenario-state)). This is setup only: insert the rows the block names; you do not read the database back afterward.
+   - Drive the UI per the scenario's `Act:` steps. Use `snapshot` to see the page; use the `@e…` refs it prints to `click`, `fill`, `type`, etc.
+   - Confirm the scenario's `Check:` assertions match what's actually on screen / in network responses. If the scenario has a `#### PostDB` block, confirm the equivalent outcome **through the UI or network** — do not query the database to assert it.
    - Record: PASS or FAIL, with a one-line reason.
 
 ## Test Users
@@ -33,12 +33,47 @@ The application is seeded with test users in `db/seed/user.seed.ts`, exported as
 cat db/seed/user.seed.ts
 ```
 
-The database is assumed to be already seeded — **do not seed it yourself**. Never run any database seeding command during a verify run; seeding is the environment's responsibility, not yours.
+If `userSeeds` is empty (or `db/seed/user.seed.ts` is missing), **seed the database yourself** before verifying:
 
-- If `userSeeds` is empty, the database has not been seeded — do **not** seed it. Instead, report every scenario that needs an authenticated user as `FAIL` with the reason `no seeded users available — run db seed before verify`, and continue scoring the run.
-- Assign one distinct user per scenario, round-robin by scenario order (`userSeeds[(N - 1) % userSeeds.length]`). This one-user-per-scenario assignment is the isolation mechanism that keeps data created by one scenario from bleeding into the next. With 5 seeded users, the first five scenarios each get a unique user.
+```bash
+bun run db:seed   # creates the 5 test users and writes db/seed/user.seed.ts
+```
+
+Then re-read `db/seed/user.seed.ts` to pick up the generated credentials. `db:seed` is safe to re-run — existing users are skipped. Reach for `bun run db:reset` only when the schema is stale and you need a clean rebuild; it drops all data, so re-seed afterward.
+
+- Assign one distinct user per scenario, round-robin by scenario order (`userSeeds[(N - 1) % userSeeds.length]`). One user per scenario keeps data created by one scenario from bleeding into the next. With 5 seeded users, the first five scenarios each get a unique user.
 - Optionally pair each scenario with its own `npx agent-browser --session <name>` jar (e.g. `--session scenario-1`) so the assigned user and the browser storage stay isolated per scenario.
 - To authenticate, navigate to the signin page and fill the assigned user's `email` and `password`, then submit and confirm the redirect to the authenticated home page before proceeding with the scenario's steps.
+
+## Setting up scenario state
+
+When a scenario has a `#### PreDB` block, put the database into that state **before** driving its Steps. This is setup only — insert the rows the block names; you never read the database back to assert (PostDB checks are confirmed through the UI/network instead).
+
+Use the `PreDB` helper from `lib/db-test` (the same one the unit tests use). Write a throwaway script and run it against the **development** database — the one the preview app at `:8080` reads (`file:./db/databases/development.db`):
+
+```bash
+cat > /tmp/verify-setup.ts <<'EOF'
+import { db } from "@/db";
+import * as schema from "@/db/schema";
+import { PreDB } from "@/lib/db-test";
+
+await PreDB(
+  db,
+  schema,
+  {
+    // rows from the scenario's #### PreDB block, e.g.
+    // posts: [{ id: 1, userId: "<assigned user's userId>", title: "First Post" }],
+  },
+  { wipe: false }, // add rows without clobbering seeded users / other scenarios
+);
+process.exit(0);
+EOF
+NODE_ENV=development bun /tmp/verify-setup.ts
+```
+
+- Pass `{ wipe: false }` so PreDB inserts the scenario's rows without deleting the seeded users — sign-in depends on them. Only use the default `wipe: true` (optionally scoped with `{ only: ["<table>"] }`) when the scenario owns that feature table outright and needs a clean slate. **Never wipe the auth/user tables.**
+- When a PreDB row needs an owner, reference the assigned test user's `userId` from `db/seed/user.seed.ts`.
+- Delete the temp script when done.
 
 ## Browser automation with agent-browser
 
