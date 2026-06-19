@@ -1,23 +1,25 @@
 ---
 name: prd
-description: Author and break down a Product Requirements Document (PRD) in .epic/prds, capturing the MVP pages, behaviors, and flows. Works in three modes — generate a brand-new PRD from a description, plan (fill in / refine) the body of an existing PRD in place, or break an existing PRD into implementation issues. Use when the user wants to spec out a new product or feature, flesh out a PRD, or turn a PRD into issues. Triggers on "create a PRD", "generate a PRD", "write a PRD", "plan this PRD", "break the PRD into issues", or "spec out this product".
+description: Author and break down a Product Requirements Document (PRD) in .epic/prds, capturing the MVP pages, behaviors, and flows. Works in four modes — generate a brand-new PRD from a description, plan (fill in / refine) the body of an existing PRD in place, interview the user to enrich a PRD through guided Q&A, or break an existing PRD into implementation issues. Use when the user wants to spec out a new product or feature, flesh out a PRD, or turn a PRD into issues. Triggers on "create a PRD", "generate a PRD", "write a PRD", "plan this PRD", "interview the PRD", "break the PRD into issues", or "spec out this product".
 ---
 
 # PRD
 
-Author and break down a Product Requirements Document in `.epic/prds/`. This skill works in three modes. Pick the mode first, then follow its reference, using the shared concepts and format below for the modes that write the PRD body.
+Author and break down a Product Requirements Document in `.epic/prds/`. This skill works in four modes. Pick the mode first, then follow its reference, using the shared concepts and format below for the modes that write the PRD body.
 
-This mirrors the `epic prd generate`, `epic prd plan`, and `epic prd break` CLI commands, merged into one skill.
+This mirrors the `epic prd generate`, `epic prd plan`, `epic prd interview`, and `epic prd break` CLI commands, merged into one skill.
 
 ## Choosing the mode
 
 - **generate** — there is no PRD yet. The user hands you a product or feature **description** and wants a new PRD created from scratch. You determine the next PRD number and create the file, then write its body. → Follow `references/generate.md`.
 - **plan** — a PRD file already exists and its body should be drafted or refined **in place**. → Follow `references/plan.md`.
+- **interview** — a PRD file already exists and the user wants to enrich it through a guided, one-question-at-a-time conversation before rewriting the body in place. → Follow `references/interview.md`.
 - **break** — a PRD file already exists and the user wants it turned into implementation **issues** in `.epic/issues/`. This mode reads the PRD and creates issue files; it does not edit the PRD body. → Follow `references/break.md`.
 
 Route by what the user asks for:
 
 - "break the PRD" / "turn it into issues" / `prd break` → **break**.
+- "interview the PRD" / "interview me about this PRD" → **interview**.
 - A description with no existing PRD → **generate**.
 - An existing PRD to flesh out / refine → **plan**.
 
@@ -84,4 +86,5 @@ Keep it tight: every page earns its place by enabling at least one behavior in a
 
 - `references/generate.md` — create a **new** PRD file from a description.
 - `references/plan.md` — draft or refine the body of an **existing** PRD in place.
+- `references/interview.md` — interview the user to enrich an **existing** PRD, then rewrite its body in place.
 - `references/break.md` — break an **existing** PRD into implementation issues.

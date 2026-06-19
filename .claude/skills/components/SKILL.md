@@ -53,6 +53,35 @@ The client component consumes the data through a `useQuery` hook — it never
 reads the cache directly. Default prefetch params must match the client's first
 render so the hydrated query key matches.
 
+### Navigation & entry points (linking between pages)
+
+When a task asks you to add an entry point — a link/button from one page to
+another (e.g. "add a Contacts link on the home view") — use `next/link`:
+
+```tsx
+// Plain navigation link — works in BOTH Server and Client Components.
+import Link from 'next/link';
+<Link href="/contacts" className="text-primary underline-offset-4 hover:underline">
+  Go to contacts
+</Link>
+```
+
+To style that link as a button, render the real `Button` with `asChild` so it
+applies its classes to the `Link` — but `Button` is a Client Component, so the
+host must be a Client Component too:
+
+```tsx
+'use client';
+import Link from 'next/link';
+import { Button } from '@/components/ui/button';
+<Button asChild><Link href="/contacts">Go to contacts</Link></Button>
+```
+
+Do NOT call `buttonVariants({ ... })` directly in a Server Component to style a
+link — `buttonVariants` is a client-only export and throws at render on the
+server (see Constraints). The styleguide's `buttonVariants` "As Link" example is
+client-only.
+
 ## Before Writing a Component
 
 1. **Read `docs/DESIGN.md`** to find where components and tokens are defined
@@ -266,6 +295,7 @@ export const dialogAtom = atom<'add' | 'edit' | null>(null);
 - NEVER put business logic in components
 - NEVER access window object in server components
 - NEVER render query results server-side - Server Components only prefetch + hydrate
+- NEVER call a function or value imported from a `'use client'` module (e.g. `buttonVariants`, `cva` helpers, hooks) inside a Server Component — it throws `Attempted to call X() from the server` at render. To link to another page styled as a button, use `<Button asChild><Link href="...">…</Link></Button>` from a Client Component, or make the host a Client Component. A bare `<Link>` (optionally with plain Tailwind classes) needs no client boundary and is fine in a Server Component.
 - ALWAYS delegate state management to hooks
 - ALWAYS add data-testid for interactive and state elements
 

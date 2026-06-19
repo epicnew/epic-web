@@ -328,7 +328,11 @@ export default function ButtonPage() {
 
           <ComponentPreview
             title="As Link (using buttonVariants)"
-            code={`<a href="#" className={buttonVariants({ variant: "outline" })}>
+            code={`// buttonVariants is a CLIENT-ONLY export — only call it inside a
+// Client Component ('use client'). In a Server Component, use
+// <Button asChild><Link href="...">…</Link></Button> instead, or it
+// throws "Attempted to call buttonVariants() from the server" at render.
+<a href="#" className={buttonVariants({ variant: "outline" })}>
   <Download />
   Download
 </a>`}
