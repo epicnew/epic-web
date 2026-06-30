@@ -29,6 +29,7 @@ If it is genuinely ambiguous, ask which one before starting.
 
 - Capture an **MVP** — only the most essential pages and behaviors. Iterate later.
 - Focus on the product's core **job to be done**.
+- **Authentication is already implemented.** The template ships sign-up, sign-in, and sign-out (better-auth) — pages, behaviors, and tests included. Do **not** add an Authentication page or sign-up/sign-in/sign-out behaviors to the PRD; they already exist. Spec only the product-specific surface.
 - A **Behavior** is an action the user can take on a Page.
 - A **job story** focuses on the job a user is trying to accomplish rather than the user themselves, emphasizing the context, motivation, and desired outcome:
 
