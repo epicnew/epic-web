@@ -23,6 +23,14 @@ function getParentDomain(url: string): string {
 
 const parentDomain = getParentDomain(baseUrl);
 
+// The iframe preview is served cross-site over the HTTPS proxy domain, which
+// requires Secure + SameSite=None + Partitioned cookies. But the verify phase
+// (and any localhost run) drives the app over http://localhost, where Chromium
+// silently drops Secure cookies — so sign-in "succeeds" but no session cookie
+// sticks and every protected page bounces to /signin. Gate the cookie hardening
+// on whether we're actually in a secure (https) context so localhost auth works.
+const isSecureContext = baseUrl.startsWith("https://");
+
 export const auth = betterAuth({
   plugins: [
     admin({
@@ -55,8 +63,8 @@ export const auth = betterAuth({
   trustedProxyHeaders: true,
   advanced: {
     cookiePrefix: "sandbox-auth",
-    useSecureCookies: true,
-    ...(parentDomain
+    useSecureCookies: isSecureContext,
+    ...(isSecureContext && parentDomain
       ? {
           crossSubDomainCookies: {
             enabled: true,
@@ -64,11 +72,16 @@ export const auth = betterAuth({
           },
         }
       : {}),
-    defaultCookieAttributes: {
-      sameSite: "none",
-      secure: true,
-      partitioned: true,
-    },
+    defaultCookieAttributes: isSecureContext
+      ? {
+          sameSite: "none",
+          secure: true,
+          partitioned: true,
+        }
+      : {
+          sameSite: "lax",
+          secure: false,
+        },
   },
 
   secret: process.env.BETTER_AUTH_SECRET,

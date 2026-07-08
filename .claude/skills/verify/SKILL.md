@@ -7,7 +7,21 @@ description: Verify that an implemented issue works by exercising its behavior i
 
 You are verifying that a web issue's implementation is working correctly by exercising it in the browser.
 
-Use `npx agent-browser` to drive the browser (fetched on demand — no install needed). The application is running at `http://localhost:8080` (use the port the user specifies if different).
+Use `npx agent-browser` to drive the browser (fetched on demand — no install needed). Verify runs against a **local verify server on `http://localhost:3001`** (isolated `test.db`), **not** the port-8080 preview: the 8080 dev server is configured for the cross-site iframe over the HTTPS proxy, so its auth cookies are `Secure`/`SameSite=None`/`Partitioned` and Chromium silently drops them over plain-HTTP `localhost` — sign-in appears to succeed but no session cookie sticks and every protected page bounces to `/signin`. The localhost verify server uses non-secure cookies (the auth config gates `Secure` on an HTTPS baseURL), so sign-in works.
+
+### Start the verify server (once, before driving scenarios)
+
+```bash
+# Isolated test DB: push schema + seed the 5 test users
+DATABASE_URL="file:./db/databases/test.db" bun run db:push
+DATABASE_URL="file:./db/databases/test.db" bun run db:seed   # writes db/seed/user.seed.ts
+# App on localhost:3001 with a localhost baseURL → non-secure cookies → HTTP auth works
+DATABASE_URL="file:./db/databases/test.db" NEXT_PUBLIC_BASE_URL="http://localhost:3001" \
+  nohup bun run preview 3001 > /tmp/verify-server.log 2>&1 &
+until curl -sf http://localhost:3001 >/dev/null 2>&1; do sleep 1; done   # wait until ready
+```
+
+Then drive `http://localhost:3001` for every scenario. (The port-8080 preview stays untouched — it's the live app the human sees in the builder iframe.)
 
 ## Workflow
 
@@ -49,7 +63,7 @@ Then re-read `db/seed/user.seed.ts` to pick up the generated credentials. `db:se
 
 When a scenario has a `#### PreDB` block, put the database into that state **before** driving its Steps. This is setup only — insert the rows the block names; you never read the database back to assert (PostDB checks are confirmed through the UI/network instead).
 
-Use the `PreDB` helper from `lib/db-test` (the same one the unit tests use). Write a throwaway script and run it against the **development** database — the one the preview app at `:8080` reads (`file:./db/databases/development.db`):
+Use the `PreDB` helper from `lib/db-test` (the same one the unit tests use). Write a throwaway script and run it against the **test** database the verify server reads (`file:./db/databases/test.db`):
 
 ```bash
 cat > /tmp/verify-setup.ts <<'EOF'
@@ -68,7 +82,7 @@ await PreDB(
 );
 process.exit(0);
 EOF
-NODE_ENV=development bun /tmp/verify-setup.ts
+DATABASE_URL="file:./db/databases/test.db" bun /tmp/verify-setup.ts
 ```
 
 - Pass `{ wipe: false }` so PreDB inserts the scenario's rows without deleting the seeded users — sign-in depends on them. Only use the default `wipe: true` (optionally scoped with `{ only: ["<table>"] }`) when the scenario owns that feature table outright and needs a clean slate. **Never wipe the auth/user tables.**
@@ -89,7 +103,7 @@ npx agent-browser install
 
 ```bash
 # open the browser and navigate
-npx agent-browser open http://localhost:8080
+npx agent-browser open http://localhost:3001
 # take a snapshot to see element refs (@e1, @e2, …)
 npx agent-browser snapshot
 # interact with the page using the @refs from the snapshot
