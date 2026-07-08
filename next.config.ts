@@ -2,6 +2,9 @@ import { withWorkflow } from "workflow/next";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Let a second (verify) dev server use its own build dir so two `next dev`
+  // instances in the same project don't collide on `.next`.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   devIndicators: false,
   allowedDevOrigins: ["*.http.cloud.morph.so", "*.epic.new", "*.lvh.me"],
   // Pin the Turbopack root to this checkout. Git worktrees live inside the
@@ -13,4 +16,12 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withWorkflow(nextConfig);
+// The verify server serves the app to a browser for scenario checks and never
+// runs workflows. `withWorkflow` bundles workflow directives with esbuild, and
+// a second `next dev` running that bundler concurrently with the port-8080 dev
+// server panics esbuild (bundler conflict). Skip it for the verify server via
+// DISABLE_WORKFLOW_BUILD so two dev servers can coexist. The main app keeps the
+// full workflow build.
+export default process.env.DISABLE_WORKFLOW_BUILD
+  ? nextConfig
+  : withWorkflow(nextConfig);

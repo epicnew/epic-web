@@ -15,10 +15,14 @@ Use `npx agent-browser` to drive the browser (fetched on demand — no install n
 # Isolated test DB: push schema + seed the 5 test users
 DATABASE_URL="file:./db/databases/test.db" bun run db:push
 DATABASE_URL="file:./db/databases/test.db" bun run db:seed   # writes db/seed/user.seed.ts
-# App on localhost:3001 with a localhost baseURL → non-secure cookies → HTTP auth works
-DATABASE_URL="file:./db/databases/test.db" NEXT_PUBLIC_BASE_URL="http://localhost:3001" \
+# App on localhost:3001 with a localhost baseURL → non-secure cookies → HTTP auth works.
+# DISABLE_WORKFLOW_BUILD=1 → skip the workflow esbuild bundler (the verify server
+# doesn't run workflows) so this 2nd `next dev` doesn't crash against the port-8080
+# server. NEXT_DIST_DIR=.next-verify → own build dir (no `.next` collision).
+DISABLE_WORKFLOW_BUILD=1 NEXT_DIST_DIR=.next-verify \
+  DATABASE_URL="file:./db/databases/test.db" NEXT_PUBLIC_BASE_URL="http://localhost:3001" \
   nohup bun run preview 3001 > /tmp/verify-server.log 2>&1 &
-until curl -sf http://localhost:3001 >/dev/null 2>&1; do sleep 1; done   # wait until ready
+until curl -sf http://localhost:3001 >/dev/null 2>&1; do sleep 1; done   # wait until ready (first compile ~30s)
 ```
 
 Then drive `http://localhost:3001` for every scenario. (The port-8080 preview stays untouched — it's the live app the human sees in the builder iframe.)
