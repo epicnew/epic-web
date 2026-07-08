@@ -190,9 +190,23 @@ Create a single Playwright test that:
 
 ### Running the Behavior Test:
 
+Specs target the URL in the `BASE_URL` environment variable (loaded from
+`.env.test` by `playwright.config.ts`). If nothing is listening there yet
+(common in a remote sandbox, where `BASE_URL` points at a dedicated spec
+server, not the port-8080 preview), boot it once:
+
 ```bash
+bun run spec:server   # idempotent — reuses the server if already running
 bun run spec [behavior-name].spec.ts
 ```
+
+**Never point specs at the port-8080 preview and never edit `.env.test`.**
+In a remote sandbox the 8080 server is configured for the cross-site iframe
+over the HTTPS proxy, so its auth cookies are `Secure`/`SameSite=None` and
+Chromium silently drops them over plain-HTTP localhost — sign-in appears to
+succeed but no session cookie sticks and every protected page bounces to
+`/signin`. The spec server (`bun run spec:server`) runs with a localhost
+base URL and non-secure cookies, so sign-in works.
 
 **Check the logs after test completes:**
 ```bash
@@ -236,7 +250,7 @@ This shows the last 100 lines of logs to see what happened during the test.
 4. **Clean Up**: Remove test data after tests
 
 **For Behavior Tests:**
-1. **Base URL**: Always use `const baseUrl = 'http://localhost:8080';`
+1. **Base URL**: Never hardcode a URL — use relative paths (`page.goto('/')`) so Playwright's configured `baseURL` (from `BASE_URL` / `.env.test`) applies
 2. **Authentication**: Use `test.use({ storageState: '.auth/user.json' });` for auth-required pages
 3. **Data Test IDs**: Ensure all interactive elements have `data-testid` attributes
 4. **Real Workflows**: Test actual user behavior, not just happy paths

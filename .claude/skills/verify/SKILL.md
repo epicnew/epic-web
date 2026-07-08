@@ -12,28 +12,15 @@ Use `npx agent-browser` to drive the browser (fetched on demand — no install n
 ### Start the verify server (once, before driving scenarios)
 
 ```bash
-# Isolated test DB: push schema + seed the 5 test users
-DATABASE_URL="file:./db/databases/test.db" bun run db:push
-DATABASE_URL="file:./db/databases/test.db" bun run db:seed   # writes db/seed/user.seed.ts
-# NEXT_DIST_DIR=.next-verify → own build dir so this 2nd `next dev` doesn't collide
-# with the port-8080 server on `.next`.
-#
-# SAFEGUARD: skipping the workflow esbuild bundler (DISABLE_WORKFLOW_BUILD=1) is
-# what lets a 2nd `next dev` run without crashing the 8080 server's bundler — but
-# skipping it means workflow-backed features wouldn't run. So skip ONLY when the
-# app has NO workflow directives; if it uses workflows, run the FULL build so
-# verify never silently exercises a half-app.
-if grep -rslq -e "use workflow" -e "use step" app lib shared 2>/dev/null; then
-  WF_FLAG=""   # app HAS workflows → full workflow build (see note below)
-  echo "NOTE: app uses workflows — verify server runs the FULL workflow build."
-else
-  WF_FLAG="DISABLE_WORKFLOW_BUILD=1"   # no workflows → safe to skip, avoids the 2nd-server crash
-fi
-env $WF_FLAG NEXT_DIST_DIR=.next-verify \
-  DATABASE_URL="file:./db/databases/test.db" NEXT_PUBLIC_BASE_URL="http://localhost:3001" \
-  nohup bun run preview 3001 > /tmp/verify-server.log 2>&1 &
-until curl -sf http://localhost:3001 >/dev/null 2>&1; do sleep 1; done   # wait until ready (first compile ~30s)
+bun run spec:server   # idempotent — reuses the server if the execute phase already booted it
 ```
+
+The script (`scripts/spec-server.sh`) owns the whole recipe: isolated
+`test.db` (schema push + seeded users), `NEXT_DIST_DIR=.next-verify` so this
+2nd `next dev` doesn't collide with the port-8080 server on `.next`, the
+workflow-build safeguard (full build when the app has `use workflow` /
+`use step` directives, `DISABLE_WORKFLOW_BUILD=1` otherwise), and a readiness
+wait. Logs land in `/tmp/spec-server.log`.
 
 Then drive `http://localhost:3001` for every scenario. (The port-8080 preview stays untouched — it's the live app the human sees in the builder iframe.)
 
