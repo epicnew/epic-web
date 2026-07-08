@@ -15,17 +15,29 @@ Use `npx agent-browser` to drive the browser (fetched on demand — no install n
 # Isolated test DB: push schema + seed the 5 test users
 DATABASE_URL="file:./db/databases/test.db" bun run db:push
 DATABASE_URL="file:./db/databases/test.db" bun run db:seed   # writes db/seed/user.seed.ts
-# App on localhost:3001 with a localhost baseURL → non-secure cookies → HTTP auth works.
-# DISABLE_WORKFLOW_BUILD=1 → skip the workflow esbuild bundler (the verify server
-# doesn't run workflows) so this 2nd `next dev` doesn't crash against the port-8080
-# server. NEXT_DIST_DIR=.next-verify → own build dir (no `.next` collision).
-DISABLE_WORKFLOW_BUILD=1 NEXT_DIST_DIR=.next-verify \
+# NEXT_DIST_DIR=.next-verify → own build dir so this 2nd `next dev` doesn't collide
+# with the port-8080 server on `.next`.
+#
+# SAFEGUARD: skipping the workflow esbuild bundler (DISABLE_WORKFLOW_BUILD=1) is
+# what lets a 2nd `next dev` run without crashing the 8080 server's bundler — but
+# skipping it means workflow-backed features wouldn't run. So skip ONLY when the
+# app has NO workflow directives; if it uses workflows, run the FULL build so
+# verify never silently exercises a half-app.
+if grep -rslq -e "use workflow" -e "use step" app lib shared 2>/dev/null; then
+  WF_FLAG=""   # app HAS workflows → full workflow build (see note below)
+  echo "NOTE: app uses workflows — verify server runs the FULL workflow build."
+else
+  WF_FLAG="DISABLE_WORKFLOW_BUILD=1"   # no workflows → safe to skip, avoids the 2nd-server crash
+fi
+env $WF_FLAG NEXT_DIST_DIR=.next-verify \
   DATABASE_URL="file:./db/databases/test.db" NEXT_PUBLIC_BASE_URL="http://localhost:3001" \
   nohup bun run preview 3001 > /tmp/verify-server.log 2>&1 &
 until curl -sf http://localhost:3001 >/dev/null 2>&1; do sleep 1; done   # wait until ready (first compile ~30s)
 ```
 
 Then drive `http://localhost:3001` for every scenario. (The port-8080 preview stays untouched — it's the live app the human sees in the builder iframe.)
+
+> **If the app uses workflows** (the FULL-build path above): two concurrent workflow builds (this verify server + the port-8080 server) can conflict and crash the verify server's bundler. If the verify server fails to come up in that case, that's the concurrency limit — not a test failure: stop the port-8080 dev server for the duration of verify (or serve the app over local HTTPS as a single server), then re-run. Never fall back to the skip-workflow build for a workflow app — that would leave the feature under test unexercised.
 
 ## Workflow
 
