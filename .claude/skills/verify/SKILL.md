@@ -7,7 +7,37 @@ description: Verify that an implemented issue works by exercising its behavior i
 
 You are verifying that a web issue's implementation is working correctly by exercising it in the browser.
 
-Use `npx agent-browser` to drive the browser (fetched on demand — no install needed). The application is running at `http://localhost:8080` (use the port the user specifies if different).
+Use `npx agent-browser` to drive the browser (fetched on demand — no install needed). Verify runs against a **local verify server on `http://localhost:3001`** (isolated `test.db`), **not** the port-8080 preview: the 8080 dev server is configured for the cross-site iframe over the HTTPS proxy, so its auth cookies are `Secure`/`SameSite=None`/`Partitioned` and Chromium silently drops them over plain-HTTP `localhost` — sign-in appears to succeed but no session cookie sticks and every protected page bounces to `/signin`. The localhost verify server uses non-secure cookies (the auth config gates `Secure` on an HTTPS baseURL), so sign-in works.
+
+### Start the verify server (once, before driving scenarios)
+
+```bash
+# Isolated test DB: push schema + seed the 5 test users
+DATABASE_URL="file:./db/databases/test.db" bun run db:push
+DATABASE_URL="file:./db/databases/test.db" bun run db:seed   # writes db/seed/user.seed.ts
+# NEXT_DIST_DIR=.next-verify → own build dir so this 2nd `next dev` doesn't collide
+# with the port-8080 server on `.next`.
+#
+# SAFEGUARD: skipping the workflow esbuild bundler (DISABLE_WORKFLOW_BUILD=1) is
+# what lets a 2nd `next dev` run without crashing the 8080 server's bundler — but
+# skipping it means workflow-backed features wouldn't run. So skip ONLY when the
+# app has NO workflow directives; if it uses workflows, run the FULL build so
+# verify never silently exercises a half-app.
+if grep -rslq -e "use workflow" -e "use step" app lib shared 2>/dev/null; then
+  WF_FLAG=""   # app HAS workflows → full workflow build (see note below)
+  echo "NOTE: app uses workflows — verify server runs the FULL workflow build."
+else
+  WF_FLAG="DISABLE_WORKFLOW_BUILD=1"   # no workflows → safe to skip, avoids the 2nd-server crash
+fi
+env $WF_FLAG NEXT_DIST_DIR=.next-verify \
+  DATABASE_URL="file:./db/databases/test.db" NEXT_PUBLIC_BASE_URL="http://localhost:3001" \
+  nohup bun run preview 3001 > /tmp/verify-server.log 2>&1 &
+until curl -sf http://localhost:3001 >/dev/null 2>&1; do sleep 1; done   # wait until ready (first compile ~30s)
+```
+
+Then drive `http://localhost:3001` for every scenario. (The port-8080 preview stays untouched — it's the live app the human sees in the builder iframe.)
+
+> **If the app uses workflows** (the FULL-build path above): two concurrent workflow builds (this verify server + the port-8080 server) can conflict and crash the verify server's bundler. If the verify server fails to come up in that case, that's the concurrency limit — not a test failure: stop the port-8080 dev server for the duration of verify (or serve the app over local HTTPS as a single server), then re-run. Never fall back to the skip-workflow build for a workflow app — that would leave the feature under test unexercised.
 
 ## Workflow
 
@@ -49,7 +79,7 @@ Then re-read `db/seed/user.seed.ts` to pick up the generated credentials. `db:se
 
 When a scenario has a `#### PreDB` block, put the database into that state **before** driving its Steps. This is setup only — insert the rows the block names; you never read the database back to assert (PostDB checks are confirmed through the UI/network instead).
 
-Use the `PreDB` helper from `lib/db-test` (the same one the unit tests use). Write a throwaway script and run it against the **development** database — the one the preview app at `:8080` reads (`file:./db/databases/development.db`):
+Use the `PreDB` helper from `lib/db-test` (the same one the unit tests use). Write a throwaway script and run it against the **test** database the verify server reads (`file:./db/databases/test.db`):
 
 ```bash
 cat > /tmp/verify-setup.ts <<'EOF'
@@ -68,7 +98,7 @@ await PreDB(
 );
 process.exit(0);
 EOF
-NODE_ENV=development bun /tmp/verify-setup.ts
+DATABASE_URL="file:./db/databases/test.db" bun /tmp/verify-setup.ts
 ```
 
 - Pass `{ wipe: false }` so PreDB inserts the scenario's rows without deleting the seeded users — sign-in depends on them. Only use the default `wipe: true` (optionally scoped with `{ only: ["<table>"] }`) when the scenario owns that feature table outright and needs a clean slate. **Never wipe the auth/user tables.**
@@ -89,7 +119,7 @@ npx agent-browser install
 
 ```bash
 # open the browser and navigate
-npx agent-browser open http://localhost:8080
+npx agent-browser open http://localhost:3001
 # take a snapshot to see element refs (@e1, @e2, …)
 npx agent-browser snapshot
 # interact with the page using the @refs from the snapshot
