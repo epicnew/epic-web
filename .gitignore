@@ -60,7 +60,7 @@ next-env.d.ts
 
 # Generated test-user credentials (random passwords) — committed as an empty
 # stub; local copies are kept out of git via `git update-index --skip-worktree`.
-/db/seed/user.seed.ts
+/db/seed/.credentials/
 
 # database
 /db/databases/*.db
