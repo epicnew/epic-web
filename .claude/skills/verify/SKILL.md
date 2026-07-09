@@ -56,10 +56,11 @@ If `userSeeds` is empty (or `db/seed/user.seed.ts` is missing), **seed the datab
 bun run db:seed   # creates the 5 test users and writes db/seed/user.seed.ts
 ```
 
-Then re-read `db/seed/user.seed.ts` to pick up the generated credentials. `db:seed` is safe to re-run — existing users are skipped. Reach for `bun run db:reset` only when the schema is stale and you need a clean rebuild; it drops all data, so re-seed afterward.
+Then re-read `db/seed/user.seed.ts` to pick up the generated credentials — it resolves the credential set for the CURRENT `DATABASE_URL`, so always read it (and run `db:seed`) with the same `DATABASE_URL` the verify server uses. `db:seed` is safe to re-run — existing users are reconciled in place (real ids read back, passwords re-aligned), so the credentials it leaves behind always sign in. Reach for `bun run db:reset` only when the schema is stale and you need a clean rebuild; it drops all data, so re-seed afterward.
 
 - Assign one distinct user per scenario, round-robin by scenario order (`userSeeds[(N - 1) % userSeeds.length]`). One user per scenario keeps data created by one scenario from bleeding into the next. With 5 seeded users, the first five scenarios each get a unique user.
-- Optionally pair each scenario with its own `npx agent-browser --session <name>` jar (e.g. `--session scenario-1`) so the assigned user and the browser storage stay isolated per scenario.
+- **One browser session at a time.** Each `--session <name>` is a FULL Chrome instance, and the sandbox has a hard memory cgroup shared with two dev servers — parallel sessions get the OOM killer shooting Chrome and the servers mid-scenario (symptoms: pages stuck on "Loading...", "Under Construction" for routes that exist, sign-ins that never land). Run scenarios sequentially in one session, and when the next scenario needs a different user, `npx agent-browser --session <name> close` the previous session (or just sign out) BEFORE opening the next. Never keep more than one session alive.
+- **Never `pkill` the dev/next servers as memory triage** — the verify server on 3001 is one of them; killing it destroys your own test target and its compiled routes. Close browser sessions instead; that's where the memory goes.
 - To authenticate, navigate to the signin page and fill the assigned user's `email` and `password`, then submit and confirm the redirect to the authenticated home page before proceeding with the scenario's steps.
 
 ## Setting up scenario state
