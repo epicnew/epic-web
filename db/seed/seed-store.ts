@@ -22,7 +22,12 @@ export type UserSeed = {
   userId: string;
 };
 
-const CREDENTIALS_DIR = join(import.meta.dir, ".credentials");
+// process.cwd()-based, NOT import.meta.dir: `import.meta.dir` is a Bun-only
+// API and this module is also loaded by Playwright under NODE (every spec
+// imports user.seed.ts -> here), where it crashed the whole spec run at
+// module load. Seed and specs always run from the repo root (bun run /
+// playwright.config.ts live there), so cwd-relative is stable.
+const CREDENTIALS_DIR = join(process.cwd(), "db", "seed", ".credentials");
 
 /** DATABASE_URL → stable per-database key (`test`, `development`, …). */
 export function seedDbKey(
