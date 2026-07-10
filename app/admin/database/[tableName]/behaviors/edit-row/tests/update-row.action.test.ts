@@ -1,4 +1,20 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
+// These actions gate on getUser() -> next/headers, which only exists inside a
+// real request scope. Mock both (same pattern as the admin/users tests) so the
+// action logic runs under vitest.
+vi.mock("next/headers", () => ({
+  headers: vi.fn(() => Promise.resolve(new Headers())),
+}));
+vi.mock("@/lib/auth", async () => {
+  const actual = await vi.importActual("@/lib/auth");
+  return {
+    ...actual,
+    getUser: vi.fn(() =>
+      Promise.resolve({ user: { id: "admin-test", role: "admin" } }),
+    ),
+  };
+});
 import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { PreDB } from "@/lib/db-test";
