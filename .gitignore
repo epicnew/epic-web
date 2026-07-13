@@ -25,6 +25,7 @@ pnpm-lock.yaml
 # next.js
 /.next/
 /.next-verify/
+/.swc/
 /out/
 
 # production

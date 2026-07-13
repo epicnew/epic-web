@@ -351,4 +351,13 @@ Each test starts with a single test case following the "start small" principle.
 5. **Loading States**: Expose `isPending`/`isLoading` from the hook for UI feedback
 6. **Test IDs**: Add `data-testid` attributes for testing
 7. **TypeScript**: Use proper types for all data structures
+
+## Phase Discipline
+
+- **Quality checks run ONCE, as a final batch**: `bun run typecheck` and lint at the
+  end of the implementation, not after every step. To inspect a result you already
+  have, grep the captured output — never re-run the command just to re-read it.
+- **Never run git commands** — commits, branches and pushes are the epic CLI
+  harness's contract, not the execute phase's. Never manage the dev server either;
+  the sandbox supervisor owns it.
 8. **File Naming**: Follow consistent naming conventions

@@ -44,19 +44,9 @@ Then drive `http://localhost:3001` for every scenario. (The port-8080 preview st
 
 ## Test Users
 
-The application is seeded with test users in `db/seed/user.seed.ts`, exported as the `userSeeds` array. Each entry has `email`, `password`, `name`, and `userId`. Passwords are randomly generated per environment, so **read the credentials from that file** — never assume a default password.
+**If the prompt contains a "Test credentials" block, use it directly and skip this section entirely** — the harness already read the seeded users; do not `cat` seed files or run `db:seed`.
 
-```bash
-cat db/seed/user.seed.ts
-```
-
-If `userSeeds` is empty (or `db/seed/user.seed.ts` is missing), **seed the database yourself** before verifying:
-
-```bash
-bun run db:seed   # creates the 5 test users and writes db/seed/user.seed.ts
-```
-
-Then re-read `db/seed/user.seed.ts` to pick up the generated credentials — it resolves the credential set for the CURRENT `DATABASE_URL`, so always read it (and run `db:seed`) with the same `DATABASE_URL` the verify server uses. `db:seed` is safe to re-run — existing users are reconciled in place (real ids read back, passwords re-aligned), so the credentials it leaves behind always sign in. Reach for `bun run db:reset` only when the schema is stale and you need a clean rebuild; it drops all data, so re-seed afterward.
+Fallback (no block in the prompt): the credentials live in `db/seed/user.seed.ts`, exported as the `userSeeds` array (`email`, `password`, `name`, `userId`; passwords are generated per environment — never assume a default). Read them with `cat db/seed/user.seed.ts`. If `userSeeds` is empty or the file is missing, run `bun run db:seed` (safe to re-run; reconciles in place) with the same `DATABASE_URL` the verify server uses, then re-read. `bun run db:reset` only when the schema is stale — it drops all data.
 
 - Assign one distinct user per scenario, round-robin by scenario order (`userSeeds[(N - 1) % userSeeds.length]`). One user per scenario keeps data created by one scenario from bleeding into the next. With 5 seeded users, the first five scenarios each get a unique user.
 - **One browser session at a time.** Each `--session <name>` is a FULL Chrome instance, and the sandbox has a hard memory cgroup shared with two dev servers — parallel sessions get the OOM killer shooting Chrome and the servers mid-scenario (symptoms: pages stuck on "Loading...", "Under Construction" for routes that exist, sign-ins that never land). Run scenarios sequentially in one session, and when the next scenario needs a different user, `npx agent-browser --session <name> close` the previous session (or just sign out) BEFORE opening the next. Never keep more than one session alive.
@@ -97,7 +87,7 @@ DATABASE_URL="file:./db/databases/test.db" bun /tmp/verify-setup.ts
 
 ### Prerequisites
 
-No install step — `npx agent-browser` fetches the tool on first use. The one thing that is per-machine is the browser: the first time you use it, provision Chrome for Testing once (reused on later runs):
+In the sandbox, `agent-browser` and its Chrome for Testing build are pre-provisioned in the snapshot — `npx agent-browser` resolves instantly, no install step. Only on a machine where the first command fails with a missing-browser error, provision once:
 
 ```bash
 npx agent-browser install

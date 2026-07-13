@@ -141,9 +141,21 @@ Use **Bun** exclusively: `bun add`, `bun remove`
 
 ## Sandbox Environment
 
-The dev server is **already running** via pm2 on port 8080. Two URLs are available:
-- `http://localhost:8080` — local access
-- Public sandbox URL — external access (check with `pm2 status`)
+The dev server runs on port 8080:
+- `http://localhost:8080` — local access via the dev server
 
 **Never run `bun run build`** — the sandbox is for development only.
 After making changes, prefer running **`bun run typecheck`** as the final verification step.
+
+## Shell Discipline
+
+- **Always quote file paths in shell commands.** This repo uses route groups and
+  dynamic segments — paths contain `(`, `)`, `[`, `]` — and unquoted interpolation
+  (e.g. `xargs -I{} sh -c "cat {}"`) breaks with `Syntax error: "(" unexpected`.
+  Prefer `bash` over `sh`, and prefer tool-native file reads over shell pipelines.
+- **Read selectively, never dump.** Do not `find ... | xargs cat` whole directories
+  into context; open the specific files the task names, and use ranged reads
+  (`sed -n 'START,ENDp'`) for large files.
+- **Never run git commands** (`status`, `add`, `commit`, `push`, branches) — git is
+  owned by the epic CLI harness end to end. Likewise never manage the dev server
+  process; the sandbox supervisor owns it.
