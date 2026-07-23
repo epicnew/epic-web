@@ -191,22 +191,23 @@ Create a single Playwright test that:
 ### Running the Behavior Test:
 
 Specs target the URL in the `BASE_URL` environment variable (loaded from
-`.env.test` by `playwright.config.ts`). If nothing is listening there yet
-(common in a remote sandbox, where `BASE_URL` points at a dedicated spec
-server, not the port-8080 preview), boot it once:
+`.env.test` by `playwright.config.ts`) — that is the PREVIEW: locally the
+per-issue dev server, in a remote sandbox the preview's public HTTPS URL.
 
 ```bash
-bun run spec:server   # idempotent — reuses the server if already running
 bun run spec [behavior-name].spec.ts
 ```
 
-**Never point specs at the port-8080 preview and never edit `.env.test`.**
-In a remote sandbox the 8080 server is configured for the cross-site iframe
-over the HTTPS proxy, so its auth cookies are `Secure`/`SameSite=None` and
-Chromium silently drops them over plain-HTTP localhost — sign-in appears to
-succeed but no session cookie sticks and every protected page bounces to
-`/signin`. The spec server (`bun run spec:server`) runs with a localhost
-base URL and non-secure cookies, so sign-in works.
+If nothing responds at `BASE_URL` (connection refused), the preview is down —
+in a remote sandbox it is supervisor-managed and comes back on its own (retry
+after a moment); locally re-run `epic preview start <issue>`.
+
+**Never edit `.env.test` and never rewrite `BASE_URL` to `localhost` in a
+remote sandbox.** The preview's auth cookies are `Secure`/`SameSite=None`
+(its Better Auth base URL is the HTTPS proxy domain) and Chromium silently
+drops them over plain-HTTP localhost — sign-in appears to succeed but no
+session cookie sticks and every protected page bounces to `/signin`. Only
+the HTTPS preview URL in `BASE_URL` works.
 
 **Check the logs after test completes:**
 ```bash

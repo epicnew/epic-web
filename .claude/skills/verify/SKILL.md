@@ -7,24 +7,11 @@ description: Verify that an implemented issue works by exercising its behavior i
 
 You are verifying that a web issue's implementation is working correctly by exercising it in the browser.
 
-Use `npx agent-browser` to drive the browser (fetched on demand — no install needed). Verify runs against a **local verify server on `http://localhost:3001`** (isolated `test.db`), **not** the port-8080 preview: the 8080 dev server is configured for the cross-site iframe over the HTTPS proxy, so its auth cookies are `Secure`/`SameSite=None`/`Partitioned` and Chromium silently drops them over plain-HTTP `localhost` — sign-in appears to succeed but no session cookie sticks and every protected page bounces to `/signin`. The localhost verify server uses non-secure cookies (the auth config gates `Secure` on an HTTPS baseURL), so sign-in works.
+Use `npx agent-browser` to drive the browser (fetched on demand — no install needed). Verify runs against the **PREVIEW** — the application URL given in the prompt. In a remote sandbox that is the preview's **public HTTPS URL** (e.g. `https://8080-<sandbox>.proxy.epic.new`); locally it is the per-issue dev server on `http://localhost:<port>`.
 
-### Start the verify server (once, before driving scenarios)
+**Never rewrite the URL to plain-HTTP `localhost` in a remote sandbox.** The preview's auth cookies are `Secure`/`SameSite=None`/`Partitioned` (its Better Auth base URL is the HTTPS proxy domain) and Chromium silently drops them over plain-HTTP `localhost` — sign-in appears to succeed but no session cookie sticks and every protected page bounces to `/signin`. Driven through the HTTPS URL itself, the same cookies work.
 
-```bash
-bun run spec:server   # idempotent — reuses the server if the execute phase already booted it
-```
-
-The script (`scripts/spec-server.sh`) owns the whole recipe: isolated
-`test.db` (schema push + seeded users), `NEXT_DIST_DIR=.next-verify` so this
-2nd `next dev` doesn't collide with the port-8080 server on `.next`, the
-workflow-build safeguard (full build when the app has `use workflow` /
-`use step` directives, `DISABLE_WORKFLOW_BUILD=1` otherwise), and a readiness
-wait. Logs land in `/tmp/spec-server.log`.
-
-Then drive `http://localhost:3001` for every scenario. (The port-8080 preview stays untouched — it's the live app the human sees in the builder iframe.)
-
-> **If the app uses workflows** (the FULL-build path above): two concurrent workflow builds (this verify server + the port-8080 server) can conflict and crash the verify server's bundler. If the verify server fails to come up in that case, that's the concurrency limit — not a test failure: stop the port-8080 dev server for the duration of verify (or serve the app over local HTTPS as a single server), then re-run. Never fall back to the skip-workflow build for a workflow app — that would leave the feature under test unexercised.
+There is no separate verify server to boot: the preview is already running (supervisor-managed in the sandbox; `epic preview start` locally). If the URL doesn't respond, wait a moment and retry — never start a second dev server.
 
 ## Workflow
 
@@ -46,18 +33,18 @@ Then drive `http://localhost:3001` for every scenario. (The port-8080 preview st
 
 **If the prompt contains a "Test credentials" block, use it directly and skip this section entirely** — the harness already read the seeded users; do not `cat` seed files or run `db:seed`.
 
-Fallback (no block in the prompt): the credentials live in `db/seed/user.seed.ts`, exported as the `userSeeds` array (`email`, `password`, `name`, `userId`; passwords are generated per environment — never assume a default). Read them with `cat db/seed/user.seed.ts`. If `userSeeds` is empty or the file is missing, run `bun run db:seed` (safe to re-run; reconciles in place) with the same `DATABASE_URL` the verify server uses, then re-read. `bun run db:reset` only when the schema is stale — it drops all data.
+Fallback (no block in the prompt): the credentials live in `db/seed/user.seed.ts`, exported as the `userSeeds` array (`email`, `password`, `name`, `userId`; passwords are generated per environment — never assume a default). Read them with `cat db/seed/user.seed.ts`. If `userSeeds` is empty or the file is missing, run `bun run db:seed` (safe to re-run; reconciles in place) with the same `DATABASE_URL` the preview uses (the one in `.env`), then re-read. `bun run db:reset` only when the schema is stale — it drops all data.
 
 - Assign one distinct user per scenario, round-robin by scenario order (`userSeeds[(N - 1) % userSeeds.length]`). One user per scenario keeps data created by one scenario from bleeding into the next. With 5 seeded users, the first five scenarios each get a unique user.
 - **One browser session at a time.** Each `--session <name>` is a FULL Chrome instance, and the sandbox has a hard memory cgroup shared with two dev servers — parallel sessions get the OOM killer shooting Chrome and the servers mid-scenario (symptoms: pages stuck on "Loading...", "Under Construction" for routes that exist, sign-ins that never land). Run scenarios sequentially in one session, and when the next scenario needs a different user, `npx agent-browser --session <name> close` the previous session (or just sign out) BEFORE opening the next. Never keep more than one session alive.
-- **Never `pkill` the dev/next servers as memory triage** — the verify server on 3001 is one of them; killing it destroys your own test target and its compiled routes. Close browser sessions instead; that's where the memory goes.
+- **Never `pkill` the dev/next servers as memory triage** — the preview you are verifying against is one of them; killing it destroys your own test target and its compiled routes. Close browser sessions instead; that's where the memory goes.
 - To authenticate, navigate to the signin page and fill the assigned user's `email` and `password`, then submit and confirm the redirect to the authenticated home page before proceeding with the scenario's steps.
 
 ## Setting up scenario state
 
 When a scenario has a `#### PreDB` block, put the database into that state **before** driving its Steps. This is setup only — insert the rows the block names; you never read the database back to assert (PostDB checks are confirmed through the UI/network instead).
 
-Use the `PreDB` helper from `lib/db-test` (the same one the unit tests use). Write a throwaway script and run it against the **test** database the verify server reads (`file:./db/databases/test.db`):
+Use the `PreDB` helper from `lib/db-test` (the same one the unit tests use). Write a throwaway script and run it against the **same database the preview reads** — the `DATABASE_URL` in `.env` (default `file:./db/databases/development.db`):
 
 ```bash
 cat > /tmp/verify-setup.ts <<'EOF'
@@ -76,7 +63,7 @@ await PreDB(
 );
 process.exit(0);
 EOF
-DATABASE_URL="file:./db/databases/test.db" bun /tmp/verify-setup.ts
+bun /tmp/verify-setup.ts   # picks up DATABASE_URL from .env — the preview's database
 ```
 
 - Pass `{ wipe: false }` so PreDB inserts the scenario's rows without deleting the seeded users — sign-in depends on them. Only use the default `wipe: true` (optionally scoped with `{ only: ["<table>"] }`) when the scenario owns that feature table outright and needs a clean slate. **Never wipe the auth/user tables.**
@@ -96,8 +83,8 @@ npx agent-browser install
 ### Quick start
 
 ```bash
-# open the browser and navigate
-npx agent-browser open http://localhost:3001
+# open the browser and navigate to the application URL from the prompt
+npx agent-browser open <application-url>
 # take a snapshot to see element refs (@e1, @e2, …)
 npx agent-browser snapshot
 # interact with the page using the @refs from the snapshot
