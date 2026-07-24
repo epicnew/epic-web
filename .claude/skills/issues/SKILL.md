@@ -156,7 +156,9 @@ Determine:
 - **Issue Title**: Clear description of the feature
 - **Behavior Name**: kebab-case name for the behavior
 - **Directory**: `app/[page]/behaviors/[behavior-name]/`
-- **File Path**: `.epic/issues/[prefix]-[number]-[slug].md`
+
+The issue's identifier and where its content lives are owned by the backend, not by this
+skill — see "Create or Update File" below for what file to actually write.
 
 If information is missing, ask the user before proceeding.
 
@@ -446,12 +448,19 @@ Break down implementation into trackable tasks:
 
 ### 6. Create or Update File
 
-**For new issues:**
-Use Write tool with path `.epic/issues/[prefix]-[number]-[slug].md`
+Issue content lives in the database, not in a file under `.epic/`. This skill never
+invents a path there — it writes into whichever file the invoking context names:
 
-**For updating existing issues:**
-1. Read the existing file first
-2. Use Edit tool for targeted changes
+**When an invoking prompt names a file** (e.g. "Read the issue file at `<path>`" — this is
+how `plan`, `execute`, `interview` and similar phases hand you an issue): read that file
+first, then use the Edit tool to write the spec into it, in place. Never create a new file
+and never write to a path under `.epic/issues/` — that directory does not exist; the file
+you were handed already stands in for it.
+
+**When invoked directly, with no file named** (a user asks you outright, "create an issue
+for X"): this skill does not create the issue itself. Tell the user that `epic issue new
+"<title>"` creates the issue record through the API; running it hands you the file to
+author this spec into.
 
 ### 7. Validate
 

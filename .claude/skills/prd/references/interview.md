@@ -1,6 +1,6 @@
 # Interview PRD
 
-Read the PRD file the user is asking about (under `.epic/prds/`).
+Read the PRD at the path the invoking prompt names (e.g. "Read the PRD file at `<path>`").
 
 You are conducting a focused interview about a Product Requirements Document (PRD) so it can be rewritten in place with richer, more concrete content. The user is present — ask questions and wait for answers.
 
@@ -15,7 +15,7 @@ Through a short, focused conversation, gather enough information to fill in gaps
 
 ## Process
 
-1. Read the PRD file. Note what is already captured and what is missing or vague.
+1. Read the PRD file at the path you were given. Note what is already captured and what is missing or vague.
 2. Ask the user focused questions **one at a time** and wait for each answer.
 3. Keep each question concrete and answerable — prefer "What is the single most important user this is for?" over "Tell me about the users."
 4. Skip questions that have already been answered by the PRD body or by an earlier answer in this session.
@@ -24,8 +24,12 @@ Through a short, focused conversation, gather enough information to fill in gaps
 
 ## Constraints
 
-- **Do not modify the YAML front matter.** Leave `id` and `status` exactly as they were.
+- **There is no YAML front matter to preserve** — the PRD's `id` and `status` live in the database, not in this file.
 - **Do not change the `# PRD-N Title` heading.** Only rewrite the body below it.
-- **Do not create new files.** Edit the PRD file in place.
+- **Do not create new files.** Edit the file you were given, in place.
 - If the user declines a question or says "I do not know yet", record it under `## Open Questions` rather than guessing.
 - Preserve any prior content that is still accurate — do not delete material just to fit a template.
+
+## When invoked directly
+
+If nothing in the request names a PRD to read, this skill has nothing to interview: tell the user that `epic prd interview <PRD-id>` hands you the file to rewrite.
