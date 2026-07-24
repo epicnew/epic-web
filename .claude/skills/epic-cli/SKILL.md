@@ -61,7 +61,7 @@ epic prd break PRD-1 -b                                         # decompose into
 epic issue list -b                                              # the issues it created
 ```
 
-`break` writes each issue through the API with its `dependsOn` edges, so `epic project build` can walk them in order. `--replace` redoes a breakdown, deleting its untouched issues first. A breakdown run from the CLI leaves the PRD's status at `draft` — only the web flow moves it — so read `epic issue list -b`, not the PRD status, to tell whether it worked.
+`break` writes each issue through the API with its `dependsOn` edges, so `epic project build` can walk them in order. `--replace` redoes a breakdown, deleting its untouched issues first. A finished breakdown settles the PRD on `ready` — decomposed, nothing running — whichever client ran it. `building` means a build actually started (`prd build` sets it).
 
 ## One issue, end to end
 

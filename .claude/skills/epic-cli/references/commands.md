@@ -48,10 +48,10 @@ Conventions used below:
 | `epic prd new [title] [--interview\|--generate] [--verbose]` | Creates the PRD record. The flags skip the wizard's mode picker. |
 | `epic prd generate [PRD-ID\|description] [-b] [--provider claude\|codex]` | Authors the body with an agent — from a description (creates a draft) or from an existing PRD's body. |
 | `epic prd show <PRD-ID> [-b]` | Prints identifier, status and the body verbatim. |
-| `epic prd list [--status draft\|generating\|breaking\|building\|in_review\|done\|archived] [--refresh] [-b]` | **Prints nothing without `-b`** when there is no TTY. |
+| `epic prd list [--status draft\|generating\|breaking\|ready\|building\|in_review\|done\|archived] [--refresh] [-b]` | **Prints nothing without `-b`** when there is no TTY. `ready` = decomposed, nothing running; `building` = a build actually started. |
 | `epic prd plan <PRD-ID> [-b] [--provider P]` | Rewrites the body as a structured spec. |
 | `epic prd interview <PRD-ID> [--provider P]` | Q&A that rewrites the body. |
-| `epic prd break <PRD-ID> [-b] [--replace] [--provider P]` | Decomposes into issues, created through the API in dependency order with their `dependsOn` edges. `--replace` deletes the previous breakdown's untouched issues first and is refused if any have started. |
+| `epic prd break <PRD-ID> [-b] [--replace] [--provider P]` | Decomposes into issues, created through the API in dependency order with their `dependsOn` edges. `--replace` deletes the previous breakdown's untouched issues first and is refused if any have started. On success the PRD settles on `ready`. |
 | `epic prd build <PRD-ID> [--local\|--remote] [-b] [--mode auto\|manual] [--foreground] [--no-tty]` | Builds the PRD's issues, stacking them onto a `prd-<n>` branch. |
 | `epic prd approve <PRD-ID> [--squash]` | Linked repo: readiness check. Local repo: merges the integration PR and sets the PRD done. |
 | `epic prd attach <PRD-ID>` · `epic prd stop <PRD-ID>` · `epic prd sessions` | Session control, same shape as the issue commands. |
