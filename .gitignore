@@ -74,4 +74,5 @@ next-env.d.ts
 # Sandbox-runtime mutated files ("template esteril" — three-worlds map).
 # Runtime-mutable => untracked + gitignored + generated at provision.
 /ecosystem.config.js
+/.epic/settings.json
 /.epic/settings.local.json

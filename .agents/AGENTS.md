@@ -110,13 +110,15 @@ await PostDB(db, schema, { users: [{ name: 'Alice' }] });
 
 When the user is planning a project, creating/managing issues, or building/reviewing issues with the `epic` command, use the **epic-cli** skill at `.claude/skills/epic-cli/SKILL.md`. This includes requests like "create a project", "generate a PRD", "break a PRD into issues", "plan an issue", "build an issue", or "review/merge an issue".
 
-Planning artifacts live under `.epic/` (configured in `.epic/settings.json`): PRDs in `.epic/prds/`, issues in `.epic/issues/`.
+PRD and issue content lives in the database, read and written through the API — `.epic/`
+on disk holds only machine configuration (the linked project id, worktree config), no
+project content.
 
 ## Workflow Skills
 
 The repository ships skills that encode this architecture. Prefer them over ad-hoc implementation:
 
-- **prd → break → build** is the project workflow: write a PRD (`.epic/prds/`), split it into issues (`.epic/issues/`), then `build` each issue (plan, then execute).
+- **prd → break → build** is the project workflow: write a PRD, split it into issues, then `build` each issue (plan, then execute).
 - **execute** implements an issue by loading the layer skills in order: **models**, **integrations**, **actions**, **routes**, **hooks**, **components**, then **unit-tests** / **behavior-tests**.
 - **plan** writes an implementation plan into an issue; **issues** creates or updates issue files.
 

@@ -16,16 +16,14 @@ Run any command with no args or `--help` for subcommands: `epic <command> --help
 
 ## Storage & settings
 
-`.epic/settings.json` configures where things live:
+PRD and issue **content** (title, description/body, status) lives only in the
+database — the CLI reads and writes it through the API; no `.epic/prds/*.md` or
+`.epic/issues/*.md` files are created or read. `.epic/` on disk holds only
+machine configuration (`.epic/settings.local.json`, gitignored — the linked
+project id — and `.epic/.worktreeinclude`).
 
-```json
-{ "baseDirectory": ".epic", "issuesDirectory": "issues", "draftsDirectory": "drafts", "type": "web" }
-```
-
-- **PRDs**: `.epic/prds/` as `PRD-[N]-[slug].md`
-- **Issues**: `.epic/issues/` as `{prefix}-{number}-{slug}.md`
-
-Issue IDs accept a Markdown path, an issue number, or `prefix-number` (e.g. `CLI-8`).
+Issue IDs accept an issue number or `prefix-number` (e.g. `CLI-8`); PRD ids
+accept `PRD-N` or the PRD's uuid.
 
 Many agent commands accept `--provider claude|codex|opencode` and `-b` (detach: run in
 background instead of attaching a viewer).
@@ -41,13 +39,13 @@ background instead of attaching a viewer).
 
 | Command | Description |
 |---------|-------------|
-| `epic prd new [title]` | Create a blank PRD in `.epic/prds/` |
+| `epic prd new [title]` | Create a blank PRD (backend-assigned `PRD-N`, content in the DB) |
 | `epic prd generate [description] [-b]` | AI-generate a PRD from a description |
 | `epic prd list [--status draft\|ready\|building\|in_review\|done\|archived] [--refresh]` | List PRDs |
 | `epic prd plan <PRD-id\|path>` | Fill the PRD body with a structured spec |
 | `epic prd interview <PRD-id\|path>` | Interview the user and rewrite the PRD body in place |
 | `epic prd attach <PRD-id\|path>` | Attach to / resume the PRD's agent session |
-| `epic prd break <PRD-id\|path> [-b]` | Break a PRD into issues in `.epic/issues/` |
+| `epic prd break <PRD-id\|path> [-b]` | Break a PRD into issues (created via the API) |
 | `epic prd build <PRD-id\|path> [-b] [--mode auto\|manual]` | Build the PRD's issues, stacking them onto a `prd-<n>` branch. `manual` (default) stops each issue at "In Review" for `epic issue approve`; `auto` self-merges each |
 | `epic prd approve <PRD-id\|path> [--squash]` | Merge the in-review PRD's integration PR and set its status to `done` |
 | `epic prd sessions` | List active PRD agent sessions for this repo |
@@ -129,8 +127,8 @@ Agent-driven lifecycle (each takes `--provider`, most take `-b`):
 
 **PRD-driven build:**
 ```bash
-epic prd generate "E-commerce platform"   # AI-draft a PRD in .epic/prds/
-epic prd break PRD-1                       # Create issue files in .epic/issues/
+epic prd generate "E-commerce platform"   # AI-draft a PRD (content saved to the DB)
+epic prd break PRD-1                       # Create issues from it via the API
 epic project build                         # Build all issues by dependency order
 ```
 
