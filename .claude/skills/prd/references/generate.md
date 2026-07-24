@@ -1,22 +1,28 @@
 # Generate PRD
 
-Given the product or feature **description** the user provides, create a new Product Requirements Document. Write the body using the Concepts and Specification Format in `SKILL.md`.
+Given the product or feature **description** the user provides, write a new Product
+Requirements Document. Write the body using the Concepts and Specification Format in
+`SKILL.md`.
 
-## Creating the file
+## Writing the file
 
-1. Determine the next PRD number `N` by checking existing files in `.epic/prds/` (named `PRD-[N]-[slug].md`). Use the next integer (start at 1 if the folder is empty).
-2. Create the file at `.epic/prds/PRD-[N]-[slug].md`, where `[slug]` is a short kebab-case title.
-3. Start the file with this front matter and heading, then write the body below it:
+This skill does not create the PRD record, assign it a number, or pick a file path — the
+invoking command already did that before handing you the description. The invoking prompt
+names the file to write, typically as: "A PRD file at `<path>` currently holds the short
+description above as its body." That file is plain markdown with no YAML front matter — the
+PRD's `id` and `status` live in the database, not in this file. The identifier is visible in
+the path itself (e.g. `.epic/sessions/PRD-7/prd.md` names `PRD-7`).
 
-```
----
-id: PRD-[N]
-status: draft
----
+1. Read the file at the path the invoking prompt names — it currently holds just the
+   description as plain text.
+2. Replace its contents with the full document: start with a `# PRD-N [Title]` heading
+   (the identifier from the path, plus a concise title drawn from the description).
+3. Write the body below the heading, following the Specification Format in `SKILL.md`.
 
-# PRD-[N] [Title]
+Do not create a new file.
 
-[body goes here]
-```
+## When invoked directly
 
-Do not put anything above the `# PRD-[N] [Title]` heading except the front matter. Write only the body below the heading, following the Specification Format in `SKILL.md`.
+If nothing in the request names a file to write, this skill does not create the PRD itself:
+tell the user that `epic prd generate "<description>"` creates the PRD record and hands you
+the file to write the body into.

@@ -11,24 +11,34 @@ is present — ask questions one at a time and wait for each answer. Never inven
 
 This mirrors the `epic issue interview` and `epic prd interview` CLI commands, merged
 into one skill. The two targets share the same shape (read the file → find gaps → ask
-focused questions one at a time → rewrite the body in place, preserving front matter)
-but enrich different sections.
+focused questions one at a time → rewrite the body in place, keeping the heading) but
+enrich different sections.
 
 ## Choosing the target
 
-Decide what is being interviewed from the request and the file path:
+Neither an issue nor a PRD lives in a file on disk — their content lives in the database.
+This skill never picks a path itself; it always reads and rewrites whichever file the
+invoking prompt names (typically an ephemeral buffer such as "Read the issue file at
+`<path>`" or "Read the PRD file at `<path>`").
 
-- An **issue** — a file under `.epic/issues/` (e.g. `ISSUE-12-...md`), or the user says
-  "issue". → Follow `references/issue.md`.
-- A **PRD** — a file under `.epic/prds/` (e.g. `PRD-3-...md`), or the user says "PRD". →
-  Follow `references/prd.md`.
+Decide what is being interviewed from the request and from how the invoking prompt
+describes the file:
 
-If the request names a file, infer the target from its location. If it is ambiguous
-which file or which type, ask the user which one to interview before starting.
+- An **issue** — the invoking prompt hands you an issue buffer, or the user says "issue".
+  → Follow `references/issue.md`.
+- A **PRD** — the invoking prompt hands you a PRD buffer, or the user says "PRD". → Follow
+  `references/prd.md`.
+
+If it is ambiguous which target or which type, ask the user before starting.
+
+**If nothing names a file at all** — a user asks directly, with no issue or PRD in hand —
+this skill has nothing to interview yet. Point them at `epic issue interview <id>` or `epic
+prd interview <PRD-id>`, whichever they mean; that command fetches the content and hands you
+the file to rewrite.
 
 ## Workflow (both targets)
 
-1. Read the target file in full, including its YAML front matter and body.
+1. Read the target file in full — its top-level heading and body (there is no front matter).
 2. Identify the gaps worth asking about (the matching reference lists what to probe).
 3. Ask the user **one focused question at a time** and wait for the answer. Keep
    questions concrete and answerable. Cap at roughly 5–10 questions; stop early once the
@@ -39,8 +49,9 @@ which file or which type, ask the user which one to interview before starting.
 
 ## Hard rules (both targets)
 
-- **Preserve the YAML front matter exactly.** Only the body below the `---` block is
-  yours to rewrite.
+- **Neither file carries YAML front matter.** Issue and PRD state (status, assignee,
+  `depends_on`, and the like) live in the database, not in this buffer — there is nothing
+  to preserve on that front. The buffer is just the top-level heading plus the body.
 - **Keep the existing top-level heading** (`# <ID> <title>` for issues, `# PRD-N Title`
   for PRDs) unless the user explicitly asks for a rename.
 - **Edit the file in place — do not create new files.**
