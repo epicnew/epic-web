@@ -1,152 +1,151 @@
 ---
 name: epic-cli
-description: Use the Epic CLI for project and issue management, PRD-driven specs, the AI agent-driven issue lifecycle (plan/execute/verify/review/merge), design tokens, and UI prototypes. Triggers on requests like "create a project", "generate a PRD", "break a PRD into issues", "plan/build an issue", "review/merge an issue", or "apply the design".
+description: Drive the Epic CLI (`epic`) — projects, PRDs, issues, and the agent build lifecycle (plan → execute → verify → fix → review → merge). Issue and PRD content lives in the Epic database and is reached through this CLI, never through files. Use when the user asks to create a project, write or break a PRD, create/plan/build/review/merge an issue, read what an issue or PRD says, or run a preview or worktree for one. Also covers the marketplace side — publishing an issue as a request, proposals, funded contracts, and Stripe payouts. Triggers on "create a project", "generate a PRD", "break the PRD into issues", "plan this issue", "build this issue", "what does issue X say", "open the PR for this issue", "link this repo to a project", "post this issue to the marketplace", "accept this proposal", "approve the contract", "set up payouts".
 ---
 
 # Epic CLI
 
-## Overview
+`epic` drives a project through PRD → issues → build. Three facts shape everything below:
 
-Epic CLI manages projects and issues backed by Markdown files and GitHub. It drives a
-PRD → issues → implementation workflow where each issue is taken through an AI agent
-lifecycle (plan, execute, verify, fix, review, merge). It also handles DESIGN.md,
-UI prototypes, per-issue preview servers, and git worktrees.
+- **Content lives in the database.** An issue's body and a PRD's body are DB columns reached over the API. There are no `.epic/issues/*.md` or `.epic/prds/*.md` files — do not create them, do not look for them.
+- **The repo carries machine config only**: the gitignored `.epic/settings.local.json` (linked `projectId`, prefix) and `.epic/.worktreeinclude`. `.epic/sessions/` holds ephemeral per-phase scratch.
+- **Commands need a linked project.** Anything touching issues or PRDs fails with "this repo is not linked to a project" until `epic project link` has run in that repo.
 
-Run any command with no args or `--help` for subcommands: `epic <command> --help`.
+## Check the target before any write
 
-## Storage & settings
+`epic whoami` prints the active user and the backend URL it will hit. Do that first when the session is new or the target is unclear — the same command against a different profile writes to a different world.
 
-PRD and issue **content** (title, description/body, status) lives only in the
-database — the CLI reads and writes it through the API; no `.epic/prds/*.md` or
-`.epic/issues/*.md` files are created or read. `.epic/` on disk holds only
-machine configuration (`.epic/settings.local.json`, gitignored — the linked
-project id — and `.epic/.worktreeinclude`).
+- `epic profile list` — all profiles, `*` on the active one. (`epic profile` with no subcommand prints help, not the list.)
+- `epic --as <profile> <command>` — one-off override, or `epic profile switch <name>` to change the default.
+- Credentials resolve from `EPIC_OAUTH_TOKEN`, then the pair `EPIC_API_URL` + `EPIC_ACCESS_TOKEN`, then the active profile. **`EPIC_OAUTH_TOKEN` alone targets production**, whatever the profile says. Leave those variables unset and let the profile resolve.
 
-Issue IDs accept an issue number or `prefix-number` (e.g. `CLI-8`); PRD ids
-accept `PRD-N` or the PRD's uuid.
+## Output modes: `-b` or you get silence
 
-Many agent commands accept `--provider claude|codex|opencode` and `-b` (detach: run in
-background instead of attaching a viewer).
+`epic issue list` and `epic prd list` render a TUI. Without a terminal — in a script, a pipe, an agent session — **they print nothing and exit 0**, which reads exactly like an empty project. Always pass `-b`:
 
-## Project
+| Want | Command |
+|---|---|
+| List issues | `epic issue list -b` |
+| List PRDs | `epic prd list -b` |
+| Read an issue body | `epic issue show <ID> -b` |
+| Read a PRD body | `epic prd show <PRD-ID>` |
+| Active agent sessions | `epic issue sessions` · `epic prd sessions` |
+| Agent transcript | `epic issue log <ID> [--session build\|verify\|merge]` |
 
-| Command | Description |
-|---------|-------------|
-| `epic project new [name] [--web\|--terminal\|--empty] [--codex\|--opencode]` | Create a project + GitHub repo from a template |
-| `epic project build [--mode auto\|manual] [--clean]` | Build all issues, walking the dependency graph; detaches an orchestrator and attaches a viewer. `manual` (default) stops each issue at "In Review"; `auto` self-merges to main |
+Anything that runs an agent (`build`, `plan`, `execute`, `verify`, `fix`, `review`, `generate`, `break`, `interview`) attaches a live viewer by default. Pass `-b` to detach and return immediately; without it, in a non-interactive context, the command holds the terminal.
 
-## PRD (product requirements)
+## Create and link
 
-| Command | Description |
-|---------|-------------|
-| `epic prd new [title]` | Create a blank PRD (backend-assigned `PRD-N`, content in the DB) |
-| `epic prd generate [description] [-b]` | AI-generate a PRD from a description |
-| `epic prd list [--status draft\|ready\|building\|in_review\|done\|archived] [--refresh]` | List PRDs |
-| `epic prd plan <PRD-id\|path>` | Fill the PRD body with a structured spec |
-| `epic prd interview <PRD-id\|path>` | Interview the user and rewrite the PRD body in place |
-| `epic prd attach <PRD-id\|path>` | Attach to / resume the PRD's agent session |
-| `epic prd break <PRD-id\|path> [-b]` | Break a PRD into issues (created via the API) |
-| `epic prd build <PRD-id\|path> [-b] [--mode auto\|manual]` | Build the PRD's issues, stacking them onto a `prd-<n>` branch. `manual` (default) stops each issue at "In Review" for `epic issue approve`; `auto` self-merges each |
-| `epic prd approve <PRD-id\|path> [--squash]` | Merge the in-review PRD's integration PR and set its status to `done` |
-| `epic prd sessions` | List active PRD agent sessions for this repo |
-
-## Issue
-
-Creation, sync, and housekeeping:
-
-| Command | Description |
-|---------|-------------|
-| `epic issue new [title] [--no-sync]` | Create an issue (syncs to GitHub unless `--no-sync`) |
-| `epic issue list [open\|closed]` | List issues |
-| `epic issue show <id>` | Show issue details |
-| `epic issue get <id>` | Download issue from GitHub |
-| `epic issue sync push\|pull <id>` | Push/pull changes to/from GitHub |
-| `epic issue assign <id> <user>` | Assign issue |
-| `epic issue close <id>` | Close issue and clean up |
-| `epic issue worktree <id>` | Create just a worktree (no tmux/agent) |
-
-Agent-driven lifecycle (each takes `--provider`, most take `-b`):
-
-| Command | Description |
-|---------|-------------|
-| `epic issue plan <id>` | Update the issue with an implementation plan |
-| `epic issue execute <id>` | Implement the plan (resumes the plan's session) |
-| `epic issue build <id> [--mode auto\|manual]` | Full loop: plan + execute + verify-fix. `manual` (default) leaves the issue "In Review" with the worktree kept |
-| `epic issue verify <id> [-p PORT]` | Verify the issue in a browser via playwright |
-| `epic issue fix <id>` | Fix failing scenarios from a prior verify |
-| `epic issue interview <id>` | Interview the user and rewrite the issue in place |
-| `epic issue review <id>` | Review the worktree diff vs main; write a `# Review` section |
-| `epic issue pr <id>` | Push the branch and open/surface its GitHub PR |
-| `epic issue merge <id>` | Agent-driven merge of the worktree branch into main |
-| `epic issue approve <id>` | Approve an In-Review issue: agent-merge into main, mark Done |
-| `epic issue attach\|stop <id>` | Attach to / stop a running session |
-| `epic issue message <id> "<text>" [-b]` | Send a message to the issue's running agent (resumes the session) |
-| `epic issue sessions` | List active tmux-backed agent sessions for this repo |
-
-## Design
-
-| Command | Description |
-|---------|-------------|
-| `epic design new [title] [--force]` | Create a blank `DESIGN.md` scaffold at the project root |
-| `epic design generate [description] [-b]` | AI-generate `DESIGN.md` from a description |
-| `epic design apply [-b]` | Apply `DESIGN.md` to the project via an agent |
-| `epic design attach` / `epic design stop` | Attach to / end the project's design agent session |
-
-## Prototype
-
-| Command | Description |
-|---------|-------------|
-| `epic prototype new "<description>" [--web\|--terminal]` | Scaffold a numbered prototype folder + `prompt.md`; the agent writes `page.tsx` (web) or `screen.tsx` (terminal) |
-| `epic prototype list` | List prototypes; Enter resumes a prototype's agent session |
-
-## Preview (per-issue dev server)
-
-| Command | Description |
-|---------|-------------|
-| `epic preview start\|stop\|url\|list <id>` | Start/stop/inspect a dev server running in an issue's worktree |
-
-## Worktrees
-
-| Command | Description |
-|---------|-------------|
-| `epic wt list [--paths]` | List git worktrees |
-| `epic wt new <branch> [path]` | Create a worktree and print its path |
-| `epic wt path <branch>` | Print a branch's worktree path |
-| `epic wt switch <branch> [-c] [-x cmd -- args]` | Print/enter a worktree path, optionally run a command in it |
-| `epic wt prune` / `epic wt remove [branch]` | Clean up stale refs / remove a worktree + branch |
-
-## Other
-
-- `epic` (no args) opens a live PRD dashboard; `epic menu` opens the categorized command menu.
-- `epic debugger on\|off` — toggle Epic's line-by-line debugger (Variables Snapshot) by editing `.env`; usually triggers a server restart.
-- `epic stage assign --stage "In Review" --user alice` — auto-assign a user when an issue reaches a stage.
-- `epic login [name] [--url]`, `epic logout`, `epic whoami`, `epic profile` — authentication and saved credential profiles. Add `--as <profile>` to any command to run it under a specific profile once.
-- Marketplace (hand issues to freelancers): `epic request`, `epic proposal`, `epic contract`, `epic payouts`, `epic admin`. Run `epic <cmd> --help` for each.
-
-## Common Workflows
-
-**PRD-driven build:**
 ```bash
-epic prd generate "E-commerce platform"   # AI-draft a PRD (content saved to the DB)
-epic prd break PRD-1                       # Create issues from it via the API
-epic project build                         # Build all issues by dependency order
+epic project new todo-app --web        # scaffold + GitHub repo + register (no spaces in the name)
+epic project list                      # ID / STATUS / PREFIX / NAME / DATE
+epic project link <8-char-id-or-exact-name>   # link an existing repo; --force skips the origin check
 ```
 
-**Single issue, end to end:**
+`--web` scaffolds from the epic-web template and is the type the build lifecycle expects; `--terminal` and `--empty` exist for other shapes. `--online` also provisions a cloud sandbox.
+
+Three things `project new` does that are easy to be surprised by: the name **cannot contain
+spaces** (`todo-app`, not "Todo App"), it **creates a real repository in the user's GitHub
+account** through `gh`, and it registers the project on the backend the active profile points
+at. Confirm the name and the target before running it. `project link` refuses a repo whose
+git origin does not match the project's repo — `--force` links anyway and records that it was
+forced.
+
+## PRD → issues
+
 ```bash
-epic issue new "Add dark mode support"     # Create + sync to GitHub
-epic issue build CLI-8                      # plan + execute + verify-fix loop
-epic issue review CLI-8                     # Write a review of the diff
-epic issue approve CLI-8                    # Merge into main and mark Done
+epic prd generate "<one paragraph describing the product>" -b   # authors PRD-N in the DB
+epic prd show PRD-1                                             # read what it wrote
+epic prd plan PRD-1 -b                                          # rewrite the body as a structured spec
+epic prd break PRD-1 -b                                         # decompose into issues, in dependency order
+epic issue list -b                                              # the issues it created
 ```
 
-**Prototype an idea:**
+`break` writes each issue through the API with its `dependsOn` edges, so `epic project build` can walk them in order. `--replace` redoes a breakdown, deleting its untouched issues first. A breakdown run from the CLI leaves the PRD's status at `draft` — only the web flow moves it — so read `epic issue list -b`, not the PRD status, to tell whether it worked.
+
+## One issue, end to end
+
 ```bash
-epic prototype new "Login page with email and password" --web
+epic issue new "Add a todo list page"    # title only; prints the identifier
+epic issue build TOD-3 --local -b        # plan → execute → verify → fix, on this machine
+epic issue log TOD-3                     # what the agent did
+epic issue pr TOD-3                      # push the branch, open the PR
+epic issue approve TOD-3                 # merge and mark Done
 ```
 
-**Design system:**
+`epic issue new` takes a **title only** — there is no flag for the body. The body is authored by a build phase, by `epic issue interview <ID>`, or in the web app.
+
+`--local` runs the worktree and agent here; `--remote` posts a cloud build (add `--foreground` to poll it to completion). `--mode manual` (the default) stops at In Review for `epic issue approve`; `--mode auto` self-merges each issue. Individual phases run standalone: `epic issue plan|execute|verify|fix|review <ID> -b`.
+
+A remote build only works against a **publicly reachable backend**. The CLI inside the cloud
+sandbox is pointed at the app's own base URL, so a backend on `localhost` is the sandbox's
+loopback, not yours: the sandbox provisions and then the build dies on its first call home.
+Use `--local` against a local backend, and keep `--remote` for staging or production.
+
+`epic issue log` reads a **local** build's transcript from disk. A remote build's transcript
+lives in the web app, not on this machine.
+
+## The content contract during a phase
+
+Each phase fetches the issue body from the API into a scratch buffer, hands the agent that **absolute path** in the prompt, and PATCHes the file back when the phase ends. So:
+
+- Edit the file the prompt names. Never invent a path, never write under `.epic/issues/` or `.epic/prds/`, and never assume the file survives the run.
+- While a build is active the content is locked to that build's grant. A write from anywhere else gets `409 ISSUE_LOCKED_BUILDING` — the answer is to wait or stop the build, not to retry harder.
+- A stuck job self-heals: a build whose state has not moved for 30 minutes releases the lock on the next write.
+
+## Marketplace: an issue, a proposal, a paid contract
+
+The same issue can be handed to an outside developer. Money moves through this flow, so
+every command below is an action in the real world, not a draft.
+
 ```bash
-epic design generate "dark fintech dashboard, minimal, Inter font, blue accent"
-epic design apply
+# client — open the issue to the marketplace and pick an offer
+epic request new 42 --budget 800        # <issue-id>; budget is orientative, USD only
+epic proposal list --for 42             # what came in
+epic proposal accept <proposal-id>      # creates the contract, and the client then funds it
+
+# developer — take the work and deliver
+epic contract list                      # yours, as client or developer
+epic contract start <ref>               # waits for the client's payment to clear
+epic contract submit <ref> -m "Done" --link https://github.com/org/repo/pull/1
+epic payouts setup                      # Stripe onboarding, once, before getting paid
+
+# client — close it out
+epic contract approve <ref>             # completes the contract and releases the money
+epic contract changes <ref> -m "Add tests"   # send it back instead
 ```
+
+`<ref>` is a contract or request UUID, or the numeric issue id it came from.
+
+Actions that cannot be walked back: `proposal accept` (creates a funded obligation),
+`proposal reject` and `proposal withdraw` (permanent), `contract approve` (releases
+payment), `contract dispute`. Each prompts for confirmation; **`--yes` skips that prompt**,
+so only pass it when the user has asked for that exact action. `contract refund` freezes the
+contract for up to 7 days while the developer answers with `refund-accept` / `refund-reject`.
+
+`epic contract watch <ref>` follows a contract's status live and exits on
+completed/refunded. `epic contract pay` is a debug poll of payment status — `contract start`
+already waits for the payment, so reach for `pay` only when diagnosing. `epic payouts setup`
+defaults to **country BR**; pass `--country <iso2>` for anyone else, and finish the KYC in the
+browser at the URL it prints. Marketplace admin commands (`admin freelancer …`) need an admin
+profile, usually via `epic --as <admin-profile>`.
+
+## When something looks stuck
+
+| Symptom | What it means | Do this |
+|---|---|---|
+| A list command printed nothing | TUI with no terminal | Re-run with `-b` |
+| "session in progress" but nothing is running | Sidecar outlived its tmux session | `epic issue stop <ID>` / `epic prd stop <ID>`, then re-run |
+| `409 ISSUE_LOCKED_BUILDING` | A build owns the content | `epic issue sessions`; wait, or stop the build |
+| "not linked to a project" | No `projectId` in this repo | `epic project link <ref>` |
+| "Your session has expired" | Token is stale | `epic login` |
+| A write landed somewhere unexpected | Wrong profile | `epic whoami` before writes |
+| A detached (`-b`) agent vanished right after starting | Its tmux server was a child of the shell that launched it and died with it | Launch it detached from the process group: `setsid epic issue build <ID> --local -b` |
+| A remote build starts, then fails on its first call home | The sandbox cannot reach a `localhost` backend | Build `--local`, or point at a publicly reachable backend |
+
+Content that was already PATCHed is safe in the database; a phase that dies mid-flight leaves
+its buffer on disk and settles on the next foreground run of that phase.
+
+## Full command surface
+
+Every command, subcommand and flag: `references/commands.md`. Any command also prints its own usage — `epic <command> --help`, `epic <command> <subcommand> --help`.
